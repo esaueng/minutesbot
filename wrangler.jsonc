@@ -3,6 +3,11 @@
   "name": "minutesbot-wgs",
   "account_id": "747b74cbd7d019dd7aeecb2c24a4bf10",
   "main": "apps/api-worker/src/index.ts",
+  "assets": {
+    "directory": "./apps/web/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
   "routes": [
     {
       "pattern": "wgs.minutes.bot",
