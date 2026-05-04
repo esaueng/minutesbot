@@ -1,0 +1,192 @@
+import { createId, nowIso, type MeetingStatus, type SummaryStatus, type TranscriptStatus } from "@minutesbot/shared";
+import type { AttendeeRow, MeetingRow, TranscriptSegmentRow, WebhookEventRow } from "./schema";
+
+export async function upsertMeeting(
+  db: D1Database,
+  input: Partial<MeetingRow> & Pick<MeetingRow, "calendar_uid" | "subject" | "organizer_email" | "teams_join_url" | "start_time" | "end_time" | "status">
+): Promise<MeetingRow> {
+  const now = nowIso();
+  const existing = input.calendar_uid
+    ? await db.prepare("SELECT * FROM meetings WHERE calendar_uid = ?").bind(input.calendar_uid).first<MeetingRow>()
+    : null;
+  const row: MeetingRow = {
+    id: existing?.id ?? input.id ?? createId("mtg"),
+    calendar_uid: input.calendar_uid,
+    subject: input.subject,
+    organizer_email: input.organizer_email,
+    organizer_name: input.organizer_name ?? null,
+    teams_join_url: input.teams_join_url,
+    start_time: input.start_time,
+    end_time: input.end_time,
+    status: input.status,
+    attendee_bot_id: input.attendee_bot_id ?? existing?.attendee_bot_id ?? null,
+    attendee_bot_state: input.attendee_bot_state ?? existing?.attendee_bot_state ?? null,
+    attendee_transcription_state: input.attendee_transcription_state ?? existing?.attendee_transcription_state ?? null,
+    attendee_recording_state: input.attendee_recording_state ?? existing?.attendee_recording_state ?? null,
+    attendee_last_event_at: input.attendee_last_event_at ?? existing?.attendee_last_event_at ?? null,
+    transcript_status: input.transcript_status ?? existing?.transcript_status ?? "not_started",
+    summary_status: input.summary_status ?? existing?.summary_status ?? "not_started",
+    latest_error: input.latest_error ?? null,
+    created_at: existing?.created_at ?? now,
+    updated_at: now
+  };
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO meetings (
+        id, calendar_uid, subject, organizer_email, organizer_name, teams_join_url, start_time, end_time, status,
+        attendee_bot_id, attendee_bot_state, attendee_transcription_state, attendee_recording_state, attendee_last_event_at,
+        transcript_status, summary_status, latest_error, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      row.id,
+      row.calendar_uid,
+      row.subject,
+      row.organizer_email,
+      row.organizer_name,
+      row.teams_join_url,
+      row.start_time,
+      row.end_time,
+      row.status,
+      row.attendee_bot_id,
+      row.attendee_bot_state,
+      row.attendee_transcription_state,
+      row.attendee_recording_state,
+      row.attendee_last_event_at,
+      row.transcript_status,
+      row.summary_status,
+      row.latest_error,
+      row.created_at,
+      row.updated_at
+    )
+    .run();
+  return row;
+}
+
+export async function listMeetings(db: D1Database): Promise<MeetingRow[]> {
+  const result = await db.prepare("SELECT * FROM meetings ORDER BY start_time DESC, created_at DESC LIMIT 200").all<MeetingRow>();
+  return result.results ?? [];
+}
+
+export async function getMeeting(db: D1Database, id: string): Promise<MeetingRow | null> {
+  return db.prepare("SELECT * FROM meetings WHERE id = ?").bind(id).first<MeetingRow>();
+}
+
+export async function findMeetingByBot(db: D1Database, botId: string): Promise<MeetingRow | null> {
+  return db.prepare("SELECT * FROM meetings WHERE attendee_bot_id = ?").bind(botId).first<MeetingRow>();
+}
+
+export async function updateMeetingStatus(db: D1Database, id: string, status: MeetingStatus, latestError?: string): Promise<void> {
+  await db.prepare("UPDATE meetings SET status = ?, latest_error = ?, updated_at = ? WHERE id = ?").bind(status, latestError ?? null, nowIso(), id).run();
+}
+
+export async function updateMeetingBotState(
+  db: D1Database,
+  id: string,
+  input: { botId?: string; state?: string; transcriptionState?: string; recordingState?: string; status?: MeetingStatus }
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE meetings
+       SET attendee_bot_id = COALESCE(?, attendee_bot_id),
+           attendee_bot_state = COALESCE(?, attendee_bot_state),
+           attendee_transcription_state = COALESCE(?, attendee_transcription_state),
+           attendee_recording_state = COALESCE(?, attendee_recording_state),
+           attendee_last_event_at = ?,
+           status = COALESCE(?, status),
+           updated_at = ?
+       WHERE id = ?`
+    )
+    .bind(input.botId ?? null, input.state ?? null, input.transcriptionState ?? null, input.recordingState ?? null, nowIso(), input.status ?? null, nowIso(), id)
+    .run();
+}
+
+export async function updateTranscriptStatus(db: D1Database, id: string, transcriptStatus: TranscriptStatus, meetingStatus?: MeetingStatus): Promise<void> {
+  await db
+    .prepare("UPDATE meetings SET transcript_status = ?, status = COALESCE(?, status), updated_at = ? WHERE id = ?")
+    .bind(transcriptStatus, meetingStatus ?? null, nowIso(), id)
+    .run();
+}
+
+export async function updateSummaryStatus(db: D1Database, id: string, summaryStatus: SummaryStatus, meetingStatus?: MeetingStatus): Promise<void> {
+  await db
+    .prepare("UPDATE meetings SET summary_status = ?, status = COALESCE(?, status), updated_at = ? WHERE id = ?")
+    .bind(summaryStatus, meetingStatus ?? null, nowIso(), id)
+    .run();
+}
+
+export async function replaceMeetingAttendees(db: D1Database, meetingId: string, attendees: Omit<AttendeeRow, "id" | "meeting_id" | "created_at">[]): Promise<void> {
+  await db.prepare("DELETE FROM attendees WHERE meeting_id = ?").bind(meetingId).run();
+  for (const attendee of attendees) {
+    await db
+      .prepare(
+        "INSERT INTO attendees (id, meeting_id, email, name, role, domain, summary_eligible, exclusion_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .bind(
+        createId("att"),
+        meetingId,
+        attendee.email,
+        attendee.name ?? null,
+        attendee.role ?? null,
+        attendee.domain ?? null,
+        attendee.summary_eligible,
+        attendee.exclusion_reason ?? null,
+        nowIso()
+      )
+      .run();
+  }
+}
+
+export async function listMeetingAttendees(db: D1Database, meetingId: string): Promise<AttendeeRow[]> {
+  const result = await db.prepare("SELECT * FROM attendees WHERE meeting_id = ? ORDER BY email").bind(meetingId).all<AttendeeRow>();
+  return result.results ?? [];
+}
+
+export async function insertTranscriptSegment(
+  db: D1Database,
+  input: Omit<TranscriptSegmentRow, "id" | "created_at"> & { id?: string }
+): Promise<void> {
+  await db
+    .prepare(
+      "INSERT INTO transcript_segments (id, meeting_id, attendee_bot_id, speaker_name, speaker_uuid, speaker_user_uuid, timestamp_ms, duration_ms, text, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(
+      input.id ?? createId("seg"),
+      input.meeting_id,
+      input.attendee_bot_id ?? null,
+      input.speaker_name ?? null,
+      input.speaker_uuid ?? null,
+      input.speaker_user_uuid ?? null,
+      input.timestamp_ms ?? null,
+      input.duration_ms ?? null,
+      input.text,
+      input.source,
+      nowIso()
+    )
+    .run();
+}
+
+export async function listTranscriptSegments(db: D1Database, meetingId: string): Promise<Array<Record<string, unknown>>> {
+  const result = await db.prepare("SELECT * FROM transcript_segments WHERE meeting_id = ? ORDER BY timestamp_ms ASC").bind(meetingId).all<Record<string, unknown>>();
+  return result.results ?? [];
+}
+
+export async function insertWebhookEvent(db: D1Database, input: Omit<WebhookEventRow, "id" | "created_at">): Promise<WebhookEventRow | null> {
+  const existing = input.idempotency_key
+    ? await db.prepare("SELECT * FROM attendee_webhook_events WHERE idempotency_key = ?").bind(input.idempotency_key).first<WebhookEventRow>()
+    : null;
+  if (existing) return null;
+  const row: WebhookEventRow = { ...input, id: createId("wh"), created_at: nowIso() };
+  await db
+    .prepare(
+      "INSERT INTO attendee_webhook_events (id, idempotency_key, meeting_id, attendee_bot_id, trigger, event_type, event_sub_type, payload, processed_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(row.id, row.idempotency_key ?? null, row.meeting_id ?? null, row.attendee_bot_id ?? null, row.trigger, row.event_type ?? null, row.event_sub_type ?? null, row.payload, row.processed_at ?? null, row.created_at)
+    .run();
+  return row;
+}
+
+export async function listWebhookEvents(db: D1Database, meetingId: string): Promise<WebhookEventRow[]> {
+  const result = await db.prepare("SELECT * FROM attendee_webhook_events WHERE meeting_id = ? ORDER BY created_at DESC").bind(meetingId).all<WebhookEventRow>();
+  return result.results ?? [];
+}

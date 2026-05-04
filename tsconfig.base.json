@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "WebWorker"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "jsx": "react-jsx",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": ["@cloudflare/workers-types", "vitest/globals"],
+    "baseUrl": ".",
+    "paths": {
+      "@minutesbot/shared": ["packages/shared/src/index.ts"],
+      "@minutesbot/db": ["packages/db/src/index.ts"],
+      "@minutesbot/recipient-policy": ["packages/recipient-policy/src/index.ts"],
+      "@minutesbot/invite-parser": ["packages/invite-parser/src/index.ts"],
+      "@minutesbot/attendee-client": ["packages/attendee-client/src/index.ts"],
+      "@minutesbot/summary-engine": ["packages/summary-engine/src/index.ts"],
+      "@minutesbot/email-renderer": ["packages/email-renderer/src/index.ts"],
+      "@minutesbot/email-sender": ["packages/email-sender/src/index.ts"]
+    }
+  }
+}

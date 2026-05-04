@@ -1,0 +1,57 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "minutesbot-api",
+  "main": "apps/api-worker/src/index.ts",
+  "compatibility_date": "2026-05-04",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "APP_BASE_URL": "https://app.minutes.bot",
+    "API_BASE_URL": "https://api.minutes.bot",
+    "ATTENDEE_API_BASE_URL": "https://attendee.minutes.bot",
+    "DEFAULT_RECORDER_EMAIL": "notetaker@meet.minutes.bot",
+    "DEFAULT_SENDER_EMAIL": "notetaker@meet.minutes.bot",
+    "ENVIRONMENT": "development"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "minutesbot",
+      "database_id": "replace-with-d1-database-id"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "ARTIFACTS",
+      "bucket_name": "minutesbot-artifacts"
+    }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "INVITE_QUEUE", "queue": "minutesbot-invites" },
+      { "binding": "SUMMARY_QUEUE", "queue": "minutesbot-summaries" },
+      { "binding": "EMAIL_QUEUE", "queue": "minutesbot-email" }
+    ],
+    "consumers": [
+      { "queue": "minutesbot-invites", "max_batch_size": 10 },
+      { "queue": "minutesbot-summaries", "max_batch_size": 10 },
+      { "queue": "minutesbot-email", "max_batch_size": 10 }
+    ]
+  },
+  "workflows": [
+    {
+      "name": "minutesbot-meeting-workflow",
+      "binding": "MEETING_WORKFLOW",
+      "class_name": "MeetingWorkflow"
+    }
+  ],
+  "send_email": [
+    {
+      "name": "SEND_EMAIL",
+      "destination_address": "notetaker@meet.minutes.bot"
+    }
+  ]
+}

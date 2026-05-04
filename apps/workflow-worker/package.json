@@ -1,0 +1,19 @@
+{
+  "name": "@minutesbot/workflow-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@minutesbot/attendee-client": "workspace:*",
+    "@minutesbot/db": "workspace:*",
+    "@minutesbot/email-renderer": "workspace:*",
+    "@minutesbot/email-sender": "workspace:*",
+    "@minutesbot/recipient-policy": "workspace:*",
+    "@minutesbot/shared": "workspace:*",
+    "@minutesbot/summary-engine": "workspace:*"
+  }
+}

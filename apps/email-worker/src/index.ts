@@ -1,0 +1,131 @@
+import { createArtifact, createAuditLog, getSettings, replaceMeetingAttendees, updateMeetingStatus, upsertMeeting } from "@minutesbot/db";
+import { parseIncomingInvite } from "@minutesbot/invite-parser";
+import { filterSummaryRecipients, getEmailDomain, isAllowedDomain } from "@minutesbot/recipient-policy";
+import { createId, nowIso, type MeetingStatus } from "@minutesbot/shared";
+
+type Env = {
+  DB: D1Database;
+  ARTIFACTS: R2Bucket;
+  MEETING_WORKFLOW: { create(options: { id?: string; params?: unknown }): Promise<unknown> };
+};
+
+type EmailMessage = {
+  from: string;
+  to: string;
+  raw: ReadableStream<Uint8Array>;
+  setReject(reason: string): void;
+};
+
+export default {
+  async email(message: EmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
+    const rawEmail = await new Response(message.raw).text();
+    ctx.waitUntil(handleInvite(message, env, rawEmail));
+  }
+};
+
+export async function handleInvite(message: Pick<EmailMessage, "from" | "to" | "setReject">, env: Env, rawEmail: string): Promise<void> {
+  const settings = await getSettings(env.DB);
+  const rawKey = `raw-invites/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.eml`;
+  await env.ARTIFACTS.put(rawKey, rawEmail, { httpMetadata: { contentType: "message/rfc822" } });
+  await createAuditLog(env.DB, { actorEmail: message.from, eventType: "invite.received", resourceType: "raw_invite", resourceId: rawKey });
+
+  let parsed: ReturnType<typeof parseIncomingInvite>;
+  try {
+    parsed = parseIncomingInvite(rawEmail);
+  } catch (error) {
+    await rejectInvite(env, message, "REJECTED_PARSE_ERROR", error instanceof Error ? error.message : "Parse error");
+    return;
+  }
+
+  if (parsed.rawRecipient.toLowerCase() !== settings.recorderEmail.toLowerCase()) {
+    await rejectInvite(env, message, "REJECTED_INVALID_RECIPIENT", "Inbound recipient does not match configured recorder email");
+    return;
+  }
+
+  if (!parsed.teamsJoinUrl) {
+    await rejectInvite(env, message, "REJECTED_NO_TEAMS_LINK", "No Teams join URL found");
+    return;
+  }
+
+  const organizerDomain = getEmailDomain(parsed.organizer.email);
+  if (
+    settings.policy.rejectExternalOrganizers &&
+    (!organizerDomain || !isAllowedDomain(organizerDomain, settings.allowedDomains, settings.policy.allowSubdomains))
+  ) {
+    await rejectInvite(env, message, "REJECTED_EXTERNAL_ORGANIZER", "Organizer domain is not allowed");
+    return;
+  }
+
+  const filtered = filterSummaryRecipients(parsed.attendees, {
+    allowedDomains: settings.allowedDomains,
+    allowSubdomains: settings.policy.allowSubdomains,
+    sendToExternalAttendees: false
+  });
+
+  if (settings.policy.requireAtLeastOneEligibleRecipient && filtered.included.length === 0) {
+    await rejectInvite(env, message, "REJECTED_NO_ELIGIBLE_RECIPIENTS", "No eligible same-company summary recipients");
+    return;
+  }
+
+  const meeting = await upsertMeeting(env.DB, {
+    calendar_uid: parsed.calendarUid,
+    subject: parsed.subject,
+    organizer_email: parsed.organizer.email,
+    organizer_name: parsed.organizer.name,
+    teams_join_url: parsed.teamsJoinUrl,
+    start_time: parsed.startTime,
+    end_time: parsed.endTime,
+    status: parsed.kind === "cancel" ? "CANCELLED" : "SCHEDULED"
+  });
+
+  await createArtifact(env.DB, {
+    meeting_id: meeting.id,
+    type: "raw_invite",
+    r2_key: rawKey,
+    content_type: "message/rfc822",
+    size_bytes: new TextEncoder().encode(rawEmail).byteLength,
+    deleted_at: null
+  });
+
+  await replaceMeetingAttendees(
+    env.DB,
+    meeting.id,
+    [
+      ...filtered.included.map((recipient) => ({
+        email: recipient.email,
+        name: recipient.name ?? null,
+        role: null,
+        domain: recipient.domain ?? null,
+        summary_eligible: 1,
+        exclusion_reason: null
+      })),
+      ...filtered.excluded.map((recipient) => ({
+        email: recipient.email,
+        name: recipient.name ?? null,
+        role: null,
+        domain: recipient.domain ?? null,
+        summary_eligible: 0,
+        exclusion_reason: recipient.reason
+      }))
+    ]
+  );
+
+  if (parsed.kind === "cancel") {
+    await createAuditLog(env.DB, { actorEmail: parsed.organizer.email, eventType: "meeting.cancelled", resourceType: "meeting", resourceId: meeting.id });
+    return;
+  }
+
+  await env.MEETING_WORKFLOW.create({ id: `meeting-${meeting.id}`, params: { meetingId: meeting.id } });
+  await createAuditLog(env.DB, { actorEmail: parsed.organizer.email, eventType: "meeting.scheduled", resourceType: "meeting", resourceId: meeting.id });
+}
+
+async function rejectInvite(env: Env, message: Pick<EmailMessage, "from" | "setReject">, status: MeetingStatus, reason: string): Promise<void> {
+  message.setReject(reason);
+  await createAuditLog(env.DB, {
+    actorEmail: message.from,
+    eventType: "invite.rejected",
+    resourceType: "invite",
+    resourceId: createId("rej"),
+    metadata: { status, reason }
+  });
+}

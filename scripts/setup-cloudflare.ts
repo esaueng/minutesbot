@@ -1,0 +1,17 @@
+const commands = [
+  "wrangler d1 create minutesbot",
+  "wrangler r2 bucket create minutesbot-artifacts",
+  "wrangler queues create minutesbot-invites",
+  "wrangler queues create minutesbot-summaries",
+  "wrangler queues create minutesbot-email",
+  "wrangler secret put ATTENDEE_API_KEY",
+  "wrangler secret put ATTENDEE_WEBHOOK_SECRET",
+  "wrangler secret put AI_API_KEY",
+  "wrangler secret put SESSION_SECRET",
+  "pnpm db:migrate:remote",
+  "pnpm deploy"
+];
+
+console.log("minutesbot Cloudflare setup checklist\n");
+for (const command of commands) console.log(`- ${command}`);
+console.log("\nAlso configure Email Routing for notetaker@meet.company.com and custom domains for app/API/attendee hosts.");

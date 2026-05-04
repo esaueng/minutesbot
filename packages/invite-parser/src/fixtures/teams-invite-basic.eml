@@ -1,0 +1,27 @@
+From: Alice Organizer <alice@company.com>
+To: minutesbot <notetaker@meet.company.com>
+Subject: Project sync
+Content-Type: multipart/mixed; boundary="b"
+
+--b
+Content-Type: text/plain
+
+Join Teams: https://teams.microsoft.com/l/meetup-join/19%3ameeting_basic%40thread.v2/0?context=%7b%7d
+--b
+Content-Type: text/calendar; method=REQUEST
+
+BEGIN:VCALENDAR
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:abc-123
+SUMMARY:Project sync
+DTSTART:20260504T150000Z
+DTEND:20260504T153000Z
+ORGANIZER;CN=Alice Organizer:mailto:alice@company.com
+ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@company.com
+ATTENDEE;CN=Vendor;ROLE=OPT-PARTICIPANT:mailto:vendor@example.net
+DESCRIPTION:Microsoft Teams meeting\\nhttps://teams.microsoft.com/l/meetup-join/19%3ameeting_basic%40thread.v2/0?context=%7b%7d
+LOCATION:Microsoft Teams Meeting
+END:VEVENT
+END:VCALENDAR
+--b--

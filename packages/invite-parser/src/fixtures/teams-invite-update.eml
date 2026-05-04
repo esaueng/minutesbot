@@ -1,0 +1,17 @@
+From: Alice Organizer <alice@company.com>
+To: minutesbot <notetaker@meet.company.com>
+Subject: Project sync updated
+Content-Type: text/calendar; method=REQUEST
+
+BEGIN:VCALENDAR
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:abc-123
+SUMMARY:Project sync updated
+DTSTART:20260504T160000Z
+DTEND:20260504T163000Z
+ORGANIZER;CN=Alice Organizer:mailto:alice@company.com
+ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@company.com
+DESCRIPTION:https://teams.microsoft.com/l/meetup-join/19%3ameeting_update%40thread.v2/0?context=%7b%7d
+END:VEVENT
+END:VCALENDAR

@@ -1,0 +1,23 @@
+{
+  "name": "@minutesbot/api-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "wrangler dev apps/api-worker/src/index.ts"
+  },
+  "dependencies": {
+    "@minutesbot/attendee-client": "workspace:*",
+    "@minutesbot/db": "workspace:*",
+    "@minutesbot/email-renderer": "workspace:*",
+    "@minutesbot/email-sender": "workspace:*",
+    "@minutesbot/invite-parser": "workspace:*",
+    "@minutesbot/recipient-policy": "workspace:*",
+    "@minutesbot/shared": "workspace:*",
+    "@minutesbot/summary-engine": "workspace:*",
+    "hono": "^4.6.20",
+    "zod": "^3.24.1"
+  }
+}

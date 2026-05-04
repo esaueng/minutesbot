@@ -1,0 +1,1 @@
+export { AttendeeClient } from "./client";
