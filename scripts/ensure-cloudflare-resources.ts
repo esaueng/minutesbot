@@ -7,7 +7,7 @@ const REQUIRED_QUEUES = {
   staging: ["minutesbot-staging-invites", "minutesbot-staging-summaries", "minutesbot-staging-email"]
 } as const;
 
-type CloudflareEnvironment = keyof typeof REQUIRED_QUEUES;
+export type CloudflareEnvironment = keyof typeof REQUIRED_QUEUES;
 
 export type RunCommand = (command: string, args: string[]) => Promise<void>;
 

@@ -2,7 +2,7 @@
 
 Run `pnpm setup:cloudflare` for guided commands. The script prints commands and intentionally does not accept secrets as command-line arguments.
 
-Use `pnpm run deploy` for deployments. Do not run `npx wrangler deploy` directly, because `pnpm run deploy` first runs the idempotent Cloudflare queue check required by this project.
+Use `pnpm run deploy` for deployments. In Cloudflare build settings, set the deploy command to `pnpm run deploy`, not `npx wrangler deploy`, because the package script first runs the idempotent Cloudflare queue check required by this project.
 
 This repo is Cloudflare-first for the minutesbot control plane. The Worker serves the API and the Vite admin UI through Workers Static Assets; D1, R2, Queues, Workflows, and Email Routing are the production runtime.
 
