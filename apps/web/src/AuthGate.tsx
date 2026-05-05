@@ -1,42 +1,59 @@
-import { Show, SignIn, UserButton, useAuth } from "@clerk/react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { setApiAuthTokenProvider } from "./lib/api";
 
+const ADMIN_TOKEN_STORAGE_KEY = "minutesbot.adminToken";
+
 export function AuthGate({ children }: { children: ReactNode }) {
-  const { getToken } = useAuth();
+  const [token, setToken] = useState(() => window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) ?? "");
+  const [draftToken, setDraftToken] = useState("");
 
   useEffect(() => {
-    setApiAuthTokenProvider(() => getToken());
+    setApiAuthTokenProvider(async () => token || null);
     return () => setApiAuthTokenProvider(null);
-  }, [getToken]);
+  }, [token]);
+
+  function saveToken(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextToken = draftToken.trim();
+    if (!nextToken) return;
+    window.localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, nextToken);
+    setToken(nextToken);
+    setDraftToken("");
+  }
+
+  function clearToken() {
+    window.localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+    setToken("");
+  }
+
+  if (!token) {
+    return (
+      <div className="authPage">
+        <form className="authPanel" onSubmit={saveToken}>
+          <h1>minutesbot admin</h1>
+          <label htmlFor="admin-token">Admin token</label>
+          <input
+            id="admin-token"
+            type="password"
+            value={draftToken}
+            onChange={(event) => setDraftToken(event.target.value)}
+            autoComplete="current-password"
+            autoFocus
+          />
+          <button type="submit">Continue</button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <>
-      <Show when="signed-out">
-        <div className="authPage">
-          <div className="authPanel">
-            <h1>minutesbot admin</h1>
-            <SignIn routing="hash" />
-          </div>
-        </div>
-      </Show>
-      <Show when="signed-in">
-        <div className="userMenu">
-          <UserButton />
-        </div>
-        {children}
-      </Show>
-    </>
-  );
-}
-
-export function MissingClerkConfig() {
-  return (
-    <div className="authPage">
-      <div className="authPanel">
-        <h1>Clerk is not configured</h1>
-        <p>Set VITE_CLERK_PUBLISHABLE_KEY before exposing the admin console.</p>
+      <div className="userMenu">
+        <button type="button" onClick={clearToken}>
+          Sign out
+        </button>
       </div>
-    </div>
+      {children}
+    </>
   );
 }

@@ -2,24 +2,18 @@
 
 minutesbot uses two layers of protection on Cloudflare:
 
-1. Clerk authenticates administrators and protects the web UI and API.
+1. A self-hosted admin token protects the web UI and API.
 2. Cloudflare Access and WAF rules block unwanted traffic before it reaches the Worker.
 
-## Clerk Setup
+## Admin Token Setup
 
-Create a Clerk application and set sign-up mode to **Restricted** in the Clerk Dashboard. Add administrators manually or by invitation.
+Set a strong `SESSION_SECRET` Cloudflare Worker secret:
 
-Set these Cloudflare Worker variables and secrets:
-
-```text
-VITE_CLERK_PUBLISHABLE_KEY=pk_...
-CLERK_PUBLISHABLE_KEY=pk_...
-CLERK_SECRET_KEY=sk_...
-ADMIN_EMAILS=admin@example.com
-CLERK_AUTHORIZED_PARTIES=https://wgs.minutes.bot
+```bash
+wrangler secret put SESSION_SECRET
 ```
 
-`ADMIN_EMAILS` is a comma-separated allowlist. You can also set `CLERK_ADMIN_USER_IDS` to a comma-separated list of Clerk user IDs.
+The admin console stores the entered token in browser local storage and sends it as a bearer token to protected API routes. Rotate `SESSION_SECRET` if the token is exposed.
 
 The API protects every `/api/*` route except:
 
@@ -39,4 +33,4 @@ Protect the admin UI with Cloudflare Access and add WAF custom rules for common 
 - `/phpmyadmin`
 - `/xmlrpc.php`
 
-In the Cloudflare dashboard, add project-level IP blocks or custom WAF rules for known unwanted sources. Do not use WAF as the only admin protection; Clerk is the access-control layer.
+In the Cloudflare dashboard, add project-level IP blocks or custom WAF rules for known unwanted sources. Do not use WAF as the only admin protection; the admin token is the access-control layer.

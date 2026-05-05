@@ -232,6 +232,16 @@ pre {
   font-size: 24px;
 }
 
+.authPanel label {
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.authPanel input {
+  width: 100%;
+}
+
 .authPanel p {
   max-width: 420px;
   margin: 0;

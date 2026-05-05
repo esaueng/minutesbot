@@ -15,7 +15,7 @@ describe("api worker", () => {
     await expect(response.json()).resolves.toEqual({
       error: {
         code: "AUTH_NOT_CONFIGURED",
-        message: "Configure ADMIN_EMAILS or CLERK_ADMIN_USER_IDS before exposing admin routes."
+        message: "Configure SESSION_SECRET before exposing admin routes."
       }
     });
   });

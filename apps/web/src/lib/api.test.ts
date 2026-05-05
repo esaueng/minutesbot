@@ -7,7 +7,7 @@ describe("web api client auth", () => {
     vi.restoreAllMocks();
   });
 
-  it("adds a Clerk bearer token when one is available", async () => {
+  it("adds an admin bearer token when one is available", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     setApiAuthTokenProvider(async () => "session-token");
@@ -24,4 +24,3 @@ describe("web api client auth", () => {
     );
   });
 });
-

@@ -9,7 +9,6 @@
     "dev": "wrangler dev apps/api-worker/src/index.ts"
   },
   "dependencies": {
-    "@clerk/backend": "^3.4.4",
     "@minutesbot/attendee-client": "workspace:*",
     "@minutesbot/db": "workspace:*",
     "@minutesbot/email-renderer": "workspace:*",

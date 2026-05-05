@@ -10,7 +10,7 @@ import { settingsRoute } from "./routes/settings";
 import { testActionsRoute } from "./routes/testActions";
 import { corsMiddleware } from "./middleware/cors";
 import { errorMiddleware } from "./middleware/errors";
-import { clerkAuthMiddleware } from "./middleware/auth";
+import { adminTokenAuthMiddleware } from "./middleware/auth";
 import { cleanupOldArtifacts, handleQueueBatch } from "../../workflow-worker/src/queueConsumers";
 
 export { MeetingWorkflow } from "../../workflow-worker/src/meetingWorkflow";
@@ -24,7 +24,7 @@ app.onError((error, c) => {
 
 app.use("*", errorMiddleware);
 app.use("*", corsMiddleware);
-app.use("/api/*", clerkAuthMiddleware);
+app.use("/api/*", adminTokenAuthMiddleware);
 app.options("*", (c) => c.body(null, 204));
 
 app.route("/api/health", healthRoute);
