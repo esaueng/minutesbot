@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "wgsbot",
-  "account_id": "747b74cbd7d019dd7aeecb2c24a4bf10",
+  "account_id": "5e4d29b3db4faa691c672e24b0009999",
   "main": "apps/api-worker/src/index.ts",
   "assets": {
     "directory": "./apps/web/dist",
@@ -21,12 +21,12 @@
     "head_sampling_rate": 1
   },
   "vars": {
-    "APP_BASE_URL": "https://app.minutes.bot",
-    "API_BASE_URL": "https://api.minutes.bot",
-    "ATTENDEE_API_BASE_URL": "https://attendee.minutes.bot",
+    "APP_BASE_URL": "https://wgs.minutes.bot",
+    "API_BASE_URL": "https://wgs.minutes.bot",
+    "ATTENDEE_API_BASE_URL": "https://attendee.wgs.minutes.bot",
     "DEFAULT_RECORDER_EMAIL": "notetaker@meet.minutes.bot",
     "DEFAULT_SENDER_EMAIL": "notetaker@meet.minutes.bot",
-    "ENVIRONMENT": "development"
+    "ENVIRONMENT": "production"
   },
   "d1_databases": [
     {
