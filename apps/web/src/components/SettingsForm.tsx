@@ -26,7 +26,6 @@ export function SettingsForm({ value, onChange }: { value: AppSettings; onChange
       <Select label="AI provider" value={value.ai.provider} options={["openai-compatible", "workers-ai"]} onChange={(v) => update("ai.provider", v)} />
       <Field label="AI base URL" value={value.ai.baseUrl ?? ""} onChange={(v) => update("ai.baseUrl", v)} />
       <Field label="AI model" value={value.ai.model} onChange={(v) => update("ai.model", v)} />
-      <ReadOnly label="AI API key" value={value.ai.apiKeyConfigured ? "Configured" : "Missing"} />
       <Select label="Email provider" value={value.email.provider} options={["mock", "cloudflare-email-service", "smtp"]} onChange={(v) => update("email.provider", v)} />
       <Field label="Sender email" value={value.email.senderEmail} onChange={(v) => update("email.senderEmail", v)} />
       <Checkbox label="Allow subdomains" checked={value.policy.allowSubdomains} onChange={(v) => update("policy.allowSubdomains", v)} />

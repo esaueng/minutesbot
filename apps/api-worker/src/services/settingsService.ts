@@ -13,12 +13,19 @@ export async function readSettings(env: Env): Promise<AppSettings> {
     },
     ai: {
       ...settings.ai,
-      apiKeyConfigured: Boolean(env.AI_API_KEY) || settings.ai.apiKeyConfigured
+      apiKeyConfigured: Boolean(env.AI_API_KEY)
     }
   };
 }
 
 export async function writeSettings(env: Env, input: unknown): Promise<AppSettings> {
   const parsed = parseSettings(input);
-  return saveSettings(env.DB, parsed);
+  await saveSettings(env.DB, {
+    ...parsed,
+    ai: {
+      ...parsed.ai,
+      apiKeyConfigured: false
+    }
+  });
+  return readSettings(env);
 }

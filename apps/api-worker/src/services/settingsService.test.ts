@@ -1,0 +1,74 @@
+import { describe, expect, it } from "vitest";
+import { defaultSettings } from "@minutesbot/shared";
+import { readSettings, writeSettings } from "./settingsService";
+import type { Env } from "../env";
+
+class MemoryD1 {
+  rows = new Map<string, string>();
+  prepare(sql: string) {
+    const db = this;
+    return {
+      values: [] as unknown[],
+      bind(...values: unknown[]) {
+        this.values = values;
+        return this;
+      },
+      async first<T>() {
+        if (sql.includes("FROM settings")) {
+          const key = this.values[0] as string;
+          const value = db.rows.get(key);
+          return value ? ({ key, value, updated_at: new Date().toISOString() } as T) : null;
+        }
+        return null;
+      },
+      async run() {
+        if (sql.startsWith("INSERT OR REPLACE INTO settings")) {
+          db.rows.set(this.values[0] as string, this.values[1] as string);
+        }
+        return { success: true };
+      }
+    };
+  }
+}
+
+function env(overrides: Partial<Env> = {}): Env {
+  return {
+    DB: new MemoryD1() as unknown as D1Database,
+    ARTIFACTS: {} as R2Bucket,
+    INVITE_QUEUE: { send: async () => undefined },
+    SUMMARY_QUEUE: { send: async () => undefined },
+    EMAIL_QUEUE: { send: async () => undefined },
+    MEETING_WORKFLOW: { create: async () => ({}) },
+    APP_BASE_URL: "https://minutesbot.example.com",
+    API_BASE_URL: "https://minutesbot.example.com",
+    ATTENDEE_API_BASE_URL: "https://attendee.example.com",
+    DEFAULT_RECORDER_EMAIL: "notetaker@example.com",
+    DEFAULT_SENDER_EMAIL: "notetaker@example.com",
+    ENVIRONMENT: "test",
+    SESSION_SECRET: "test-secret",
+    ...overrides
+  };
+}
+
+describe("settings service", () => {
+  it("derives AI API key status only from the Worker secret", async () => {
+    const testEnv = env();
+
+    await writeSettings(testEnv, {
+      ...defaultSettings,
+      ai: { ...defaultSettings.ai, apiKeyConfigured: true }
+    });
+
+    await expect(readSettings(testEnv)).resolves.toMatchObject({
+      ai: { apiKeyConfigured: false }
+    });
+  });
+
+  it("reports AI API key status when AI_API_KEY is configured in env", async () => {
+    const testEnv = env({ AI_API_KEY: "sk-test" });
+
+    await expect(readSettings(testEnv)).resolves.toMatchObject({
+      ai: { apiKeyConfigured: true }
+    });
+  });
+});
