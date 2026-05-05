@@ -14,7 +14,13 @@ export function SettingsForm({ value, onChange }: { value: AppSettings; onChange
     <form className="formGrid">
       <Field label="Company name" value={value.companyName} onChange={(v) => update("companyName", v)} />
       <Field label="Primary domain" value={value.primaryDomain} onChange={(v) => update("primaryDomain", v)} />
-      <Field label="Allowed domains" value={value.allowedDomains.join(", ")} onChange={(v) => update("allowedDomains", v.split(",").map((item) => item.trim()).filter(Boolean))} />
+      <TextAreaField
+        className="allowedDomainsField"
+        help="Enter one domain per line, or separate domains with commas."
+        label="Allowed domains"
+        value={value.allowedDomains.join("\n")}
+        onChange={(v) => update("allowedDomains", parseAllowedDomains(v))}
+      />
       <Field label="Recorder email" value={value.recorderEmail} onChange={(v) => update("recorderEmail", v)} />
       <Field label="Attendee base URL" value={value.attendee.baseUrl} onChange={(v) => update("attendee.baseUrl", v)} />
       <ReadOnly label="Attendee API key" value={value.attendee.apiKeyConfigured ? "Configured" : "Missing"} />
@@ -39,11 +45,40 @@ export function SettingsForm({ value, onChange }: { value: AppSettings; onChange
   );
 }
 
+export function parseAllowedDomains(value: string): string[] {
+  return value
+    .split(/[\n,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <label>
       <span>{label}</span>
       <input value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+function TextAreaField({
+  className,
+  help,
+  label,
+  value,
+  onChange
+}: {
+  className?: string;
+  help?: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className={className}>
+      <span>{label}</span>
+      <textarea rows={4} value={value} onChange={(event) => onChange(event.target.value)} />
+      {help && <span className="fieldHelp">{help}</span>}
     </label>
   );
 }

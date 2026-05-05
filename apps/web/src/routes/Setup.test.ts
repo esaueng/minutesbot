@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultSettings, type AppSettings } from "@minutesbot/shared";
+import { parseAllowedDomains } from "../components/SettingsForm";
 import { saveSetupSettings } from "./Setup";
 
 describe("setup save status", () => {
@@ -19,5 +20,16 @@ describe("setup save status", () => {
       settings: defaultSettings,
       message: "D1 write failed"
     });
+  });
+});
+
+describe("allowed domains parsing", () => {
+  it("accepts comma-separated and newline-separated domains", () => {
+    expect(parseAllowedDomains("wgsglobalservices.com, wgs.global\nsubsidiary.example\n\n partner.example")).toEqual([
+      "wgsglobalservices.com",
+      "wgs.global",
+      "subsidiary.example",
+      "partner.example"
+    ]);
   });
 });
