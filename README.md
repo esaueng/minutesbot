@@ -42,6 +42,7 @@ wrangler secret put SESSION_SECRET
 - `pnpm test`
 - `pnpm typecheck`
 - `pnpm lint`
+- `pnpm run vercel:build`
 - `pnpm run deploy`
 - `pnpm setup:cloudflare`
 - `pnpm check`
@@ -55,6 +56,7 @@ wrangler secret put SESSION_SECRET
 - [Operations](docs/operations.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Local development](docs/local-development.md)
+- [Vercel deployment](docs/vercel-deployment.md)
 
 ## License Notes
 
