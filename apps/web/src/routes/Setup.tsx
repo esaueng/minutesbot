@@ -7,6 +7,7 @@ import { ApiError, getSettings, saveSettings } from "../lib/api";
 export function Setup() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
   const [authNotConfigured, setAuthNotConfigured] = useState(false);
   useEffect(() => {
     getSettings()
@@ -45,7 +46,19 @@ export function Setup() {
       </header>
       <SettingsForm value={settings} onChange={setSettings} />
       <div className="actions">
-        <button onClick={async () => setSettings(await saveSettings(settings))}>Save settings</button>
+        <button
+          disabled={saving}
+          onClick={async () => {
+            setSaving(true);
+            setMessage("Saving...");
+            const result = await saveSetupSettings(settings);
+            setSettings(result.settings);
+            setMessage(result.message);
+            setSaving(false);
+          }}
+        >
+          {saving ? "Saving..." : "Save settings"}
+        </button>
         {message && <span>{message}</span>}
       </div>
       <section>
@@ -61,4 +74,18 @@ export function Setup() {
       </section>
     </div>
   );
+}
+
+export async function saveSetupSettings(
+  settings: AppSettings,
+  save: (settings: AppSettings) => Promise<AppSettings> = saveSettings
+): Promise<{ settings: AppSettings; message: string }> {
+  try {
+    return { settings: await save(settings), message: "Saved" };
+  } catch (error) {
+    return {
+      settings,
+      message: error instanceof Error ? error.message : "Save failed"
+    };
+  }
 }
