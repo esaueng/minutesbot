@@ -7,7 +7,7 @@ DEFAULT_SENDER_EMAIL=notetaker@wgs.bot
 ENVIRONMENT=production
 ATTENDEE_API_KEY=
 ATTENDEE_WEBHOOK_SECRET=
-AI_API_KEY=
+AI_API_KEY=replace-with-ai-api-key
 SESSION_SECRET=
 
 # Attendee Cloudflare Container router
