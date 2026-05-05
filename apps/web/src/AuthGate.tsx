@@ -1,16 +1,21 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { setApiAuthTokenProvider } from "./lib/api";
 
 const ADMIN_TOKEN_STORAGE_KEY = "minutesbot.adminToken";
 
+export function getStoredAdminToken(): string | null {
+  return typeof window === "undefined" ? null : window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
+}
+
+export function setStoredAdminTokenProvider(): void {
+  setApiAuthTokenProvider(async () => getStoredAdminToken());
+}
+
+setStoredAdminTokenProvider();
+
 export function AuthGate({ children }: { children: ReactNode }) {
   const [token, setToken] = useState(() => window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) ?? "");
   const [draftToken, setDraftToken] = useState("");
-
-  useEffect(() => {
-    setApiAuthTokenProvider(async () => token || null);
-    return () => setApiAuthTokenProvider(null);
-  }, [token]);
 
   function saveToken(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
