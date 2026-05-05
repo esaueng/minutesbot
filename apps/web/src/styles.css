@@ -151,6 +151,20 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   box-shadow: 0 18px 44px rgba(0, 0, 0, .16);
 }
 
+.noticePanel {
+  max-width: 720px;
+  background: rgba(15, 23, 42, .86);
+  border: 1px solid #253247;
+  border-radius: 8px;
+  padding: 18px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .16);
+}
+
+.noticePanel p {
+  margin: 0;
+  color: #cbd5e1;
+}
+
 .metricGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

@@ -3,6 +3,18 @@ import type { AppSettings } from "@minutesbot/shared";
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 let authTokenProvider: (() => Promise<string | null>) | null = null;
 
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code: string;
+
+  constructor(message: string, status: number, code = "REQUEST_FAILED") {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
 export function setApiAuthTokenProvider(provider: (() => Promise<string | null>) | null): void {
   authTokenProvider = provider;
 }
@@ -41,10 +53,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       ...(init.headers ?? {})
     }
   });
-  const data = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+  const data = (await response.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
   if (!response.ok) {
     const message = data?.error?.message ?? `Request failed with ${response.status}`;
-    throw new Error(message);
+    throw new ApiError(message, response.status, data?.error?.code);
   }
   return data as T;
 }

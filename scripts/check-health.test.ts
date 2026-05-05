@@ -6,7 +6,7 @@ describe("checkHealth", () => {
     const messages: string[] = [];
 
     const exitCode = await checkHealth({
-      env: { API_BASE_URL: "https://wgs.bot" },
+      env: { API_BASE_URL: "https://minutesbot.wgsglobal.app" },
       fetchHealth: async () =>
         new Response("This deployment cannot be found", {
           status: 404,
@@ -22,7 +22,7 @@ describe("checkHealth", () => {
 
     expect(exitCode).toBe(1);
     expect(messages).toContain("404 This deployment cannot be found");
-    expect(messages).toContain("wgs.bot is resolving through Vercel nameservers, so Cloudflare Workers cannot serve the app.");
+    expect(messages).toContain("wgsglobal.app is resolving through Vercel nameservers, so Cloudflare Workers cannot serve the app.");
     expect(messages).toContain("Change the registrar nameservers to abby.ns.cloudflare.com and arvind.ns.cloudflare.com, then rerun pnpm check.");
   });
 
@@ -30,7 +30,7 @@ describe("checkHealth", () => {
     const messages: string[] = [];
 
     const exitCode = await checkHealth({
-      env: { API_BASE_URL: "https://wgs.bot" },
+      env: { API_BASE_URL: "https://minutesbot.wgsglobal.app" },
       fetchHealth: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
       resolveNs: async () => ["abby.ns.cloudflare.com", "arvind.ns.cloudflare.com"],
       log: (message) => messages.push(message),

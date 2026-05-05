@@ -1,6 +1,6 @@
 console.log(`# minutesbot Cloudflare Worker
-APP_BASE_URL=https://wgs.bot
-API_BASE_URL=https://wgs.bot
+APP_BASE_URL=https://admin.wgs.bot
+API_BASE_URL=https://minutesbot.wgsglobal.app
 ATTENDEE_API_BASE_URL=https://attendee.wgs.bot
 DEFAULT_RECORDER_EMAIL=notetaker@wgs.bot
 DEFAULT_SENDER_EMAIL=notetaker@wgs.bot

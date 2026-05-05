@@ -2,14 +2,39 @@ import { useEffect, useState } from "react";
 import type { AppSettings } from "@minutesbot/shared";
 import { SettingsForm } from "../components/SettingsForm";
 import { TestActionButton } from "../components/TestActionButton";
-import { getSettings, saveSettings } from "../lib/api";
+import { ApiError, getSettings, saveSettings } from "../lib/api";
 
 export function Setup() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [message, setMessage] = useState("");
+  const [authNotConfigured, setAuthNotConfigured] = useState(false);
   useEffect(() => {
-    getSettings().then(setSettings).catch((error) => setMessage(error.message));
+    getSettings()
+      .then(setSettings)
+      .catch((error) => {
+        if (error instanceof ApiError && error.code === "AUTH_NOT_CONFIGURED") {
+          setAuthNotConfigured(true);
+        }
+        setMessage(error instanceof Error ? error.message : "Failed to load setup.");
+      });
   }, []);
+
+  if (authNotConfigured) {
+    return (
+      <div className="page">
+        <header>
+          <h1>Setup blocked</h1>
+          <p>Configure the admin session secret before using protected setup routes.</p>
+        </header>
+        <section className="noticePanel">
+          <h2>SESSION_SECRET is missing</h2>
+          <p>{message}</p>
+          <pre>wrangler secret put SESSION_SECRET</pre>
+          <p>After setting the secret, deploy or restart the Worker and sign in with the same value as the admin token.</p>
+        </section>
+      </div>
+    );
+  }
 
   if (!settings) return <p>{message || "Loading setup..."}</p>;
   return (

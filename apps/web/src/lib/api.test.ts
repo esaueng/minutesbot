@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiGet, setApiAuthTokenProvider } from "./api";
+import { ApiError, apiGet, setApiAuthTokenProvider } from "./api";
 
 describe("web api client auth", () => {
   afterEach(() => {
@@ -22,5 +22,30 @@ describe("web api client auth", () => {
         })
       })
     );
+  });
+
+  it("preserves API error status and code", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "AUTH_NOT_CONFIGURED",
+              message: "Configure SESSION_SECRET before exposing admin routes."
+            }
+          }),
+          { status: 503 }
+        )
+      )
+    );
+
+    await expect(apiGet<{ ok: boolean }>("/api/settings")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 503,
+      code: "AUTH_NOT_CONFIGURED",
+      message: "Configure SESSION_SECRET before exposing admin routes."
+    });
+    await expect(apiGet<{ ok: boolean }>("/api/settings")).rejects.toBeInstanceOf(ApiError);
   });
 });
