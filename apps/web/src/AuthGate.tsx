@@ -35,7 +35,7 @@ export function MissingClerkConfig() {
     <div className="authPage">
       <div className="authPanel">
         <h1>Clerk is not configured</h1>
-        <p>Set VITE_CLERK_PUBLISHABLE_KEY in Vercel before exposing the admin console.</p>
+        <p>Set VITE_CLERK_PUBLISHABLE_KEY before exposing the admin console.</p>
       </div>
     </div>
   );

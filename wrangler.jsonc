@@ -65,5 +65,117 @@
       "name": "SEND_EMAIL",
       "destination_address": "notetaker@meet.minutes.bot"
     }
-  ]
+  ],
+  "env": {
+    "staging": {
+      "name": "minutesbot-wgs-staging",
+      "routes": [
+        {
+          "pattern": "staging.wgs.minutes.bot",
+          "custom_domain": true
+        }
+      ],
+      "vars": {
+        "APP_BASE_URL": "https://staging.wgs.minutes.bot",
+        "API_BASE_URL": "https://staging.wgs.minutes.bot",
+        "ATTENDEE_API_BASE_URL": "https://staging-attendee.wgs.minutes.bot",
+        "DEFAULT_RECORDER_EMAIL": "notetaker-staging@meet.minutes.bot",
+        "DEFAULT_SENDER_EMAIL": "notetaker-staging@meet.minutes.bot",
+        "ENVIRONMENT": "staging"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "minutesbot-staging",
+          "database_id": "replace-with-staging-d1-database-id"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "ARTIFACTS",
+          "bucket_name": "minutesbot-staging-artifacts"
+        }
+      ],
+      "queues": {
+        "producers": [
+          { "binding": "INVITE_QUEUE", "queue": "minutesbot-staging-invites" },
+          { "binding": "SUMMARY_QUEUE", "queue": "minutesbot-staging-summaries" },
+          { "binding": "EMAIL_QUEUE", "queue": "minutesbot-staging-email" }
+        ],
+        "consumers": [
+          { "queue": "minutesbot-staging-invites", "max_batch_size": 10 },
+          { "queue": "minutesbot-staging-summaries", "max_batch_size": 10 },
+          { "queue": "minutesbot-staging-email", "max_batch_size": 10 }
+        ]
+      },
+      "workflows": [
+        {
+          "name": "minutesbot-staging-meeting-workflow",
+          "binding": "MEETING_WORKFLOW",
+          "class_name": "MeetingWorkflow"
+        }
+      ],
+      "send_email": [
+        {
+          "name": "SEND_EMAIL",
+          "destination_address": "notetaker-staging@meet.minutes.bot"
+        }
+      ]
+    },
+    "production": {
+      "name": "minutesbot-wgs",
+      "routes": [
+        {
+          "pattern": "wgs.minutes.bot",
+          "custom_domain": true
+        }
+      ],
+      "vars": {
+        "APP_BASE_URL": "https://wgs.minutes.bot",
+        "API_BASE_URL": "https://wgs.minutes.bot",
+        "ATTENDEE_API_BASE_URL": "https://attendee.wgs.minutes.bot",
+        "DEFAULT_RECORDER_EMAIL": "notetaker@meet.minutes.bot",
+        "DEFAULT_SENDER_EMAIL": "notetaker@meet.minutes.bot",
+        "ENVIRONMENT": "production"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "minutesbot",
+          "database_id": "ad101cd3-8733-4171-bba4-90928adb1f4f"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "ARTIFACTS",
+          "bucket_name": "minutesbot-artifacts"
+        }
+      ],
+      "queues": {
+        "producers": [
+          { "binding": "INVITE_QUEUE", "queue": "minutesbot-invites" },
+          { "binding": "SUMMARY_QUEUE", "queue": "minutesbot-summaries" },
+          { "binding": "EMAIL_QUEUE", "queue": "minutesbot-email" }
+        ],
+        "consumers": [
+          { "queue": "minutesbot-invites", "max_batch_size": 10 },
+          { "queue": "minutesbot-summaries", "max_batch_size": 10 },
+          { "queue": "minutesbot-email", "max_batch_size": 10 }
+        ]
+      },
+      "workflows": [
+        {
+          "name": "minutesbot-meeting-workflow",
+          "binding": "MEETING_WORKFLOW",
+          "class_name": "MeetingWorkflow"
+        }
+      ],
+      "send_email": [
+        {
+          "name": "SEND_EMAIL",
+          "destination_address": "notetaker@meet.minutes.bot"
+        }
+      ]
+    }
+  }
 }

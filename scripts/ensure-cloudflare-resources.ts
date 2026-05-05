@@ -1,11 +1,18 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const REQUIRED_QUEUES = ["minutesbot-invites", "minutesbot-summaries", "minutesbot-email"] as const;
+const REQUIRED_QUEUES = {
+  development: ["minutesbot-invites", "minutesbot-summaries", "minutesbot-email"],
+  production: ["minutesbot-invites", "minutesbot-summaries", "minutesbot-email"],
+  staging: ["minutesbot-staging-invites", "minutesbot-staging-summaries", "minutesbot-staging-email"]
+} as const;
+
+type CloudflareEnvironment = keyof typeof REQUIRED_QUEUES;
 
 export type RunCommand = (command: string, args: string[]) => Promise<void>;
 
 export type EnsureCloudflareResourcesOptions = {
+  environment?: CloudflareEnvironment;
   runCommand?: RunCommand;
   log?: (message: string) => void;
   error?: (message: string) => void;
@@ -57,8 +64,9 @@ export async function ensureCloudflareResources(options: EnsureCloudflareResourc
   const runCommand = options.runCommand ?? runWrangler;
   const log = options.log ?? console.log;
   const error = options.error ?? console.error;
+  const environment = options.environment ?? "production";
 
-  for (const queueName of REQUIRED_QUEUES) {
+  for (const queueName of REQUIRED_QUEUES[environment]) {
     try {
       await runCommand("wrangler", ["queues", "info", queueName]);
       log(`Cloudflare Queue ${queueName} already exists.`);
@@ -84,7 +92,14 @@ export async function ensureCloudflareResources(options: EnsureCloudflareResourc
 const isCli = process.argv[1] === fileURLToPath(import.meta.url);
 
 if (isCli) {
-  ensureCloudflareResources().catch(() => {
+  ensureCloudflareResources({ environment: parseEnvironment(process.argv) }).catch(() => {
     process.exitCode = 1;
   });
+}
+
+function parseEnvironment(args: string[]): CloudflareEnvironment {
+  const envFlagIndex = args.indexOf("--env");
+  const value = envFlagIndex >= 0 ? args[envFlagIndex + 1] : undefined;
+  if (value === "staging" || value === "production" || value === "development") return value;
+  return "production";
 }

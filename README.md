@@ -4,17 +4,20 @@ minutesbot is an open-source, self-hosted, single-tenant Microsoft Teams meeting
 
 minutesbot does not directly record Teams meetings. The separate self-hosted Attendee backend joins meetings and performs recording/transcription.
 
+This repository is Cloudflare-first. The minutesbot control plane runs on Cloudflare Workers, Workers Static Assets, D1, R2, Queues, Workflows, and Email Routing. Attendee itself cannot be rewritten into Workers/D1/R2 without a separate product rewrite; the supported Cloudflare-hosted option is upstream Attendee on Cloudflare Containers with external Postgres and Redis-compatible services.
+
 ## Architecture
 
-- React + Vite admin UI hosted on Cloudflare Pages or Workers Static Assets.
+- React + Vite admin UI hosted on Workers Static Assets.
 - Hono API Worker for settings, dashboards, retry actions, artifacts, audit logs, and Attendee webhooks.
 - Cloudflare Email Worker for inbound recorder mailbox invites.
 - Cloudflare D1 for metadata and audit state.
 - Cloudflare R2 for raw invites, transcript files, summaries, and artifacts.
 - Cloudflare Queues and Workflows for durable bot creation, transcript finalization, summaries, email, and cleanup.
 - Fetch-based Attendee REST client in `packages/attendee-client`.
+- Optional Cloudflare Container router for upstream Attendee in `deploy/attendee-container`.
 
-Demo domains use `https://minutes.bot`, `https://app.minutes.bot`, `https://api.minutes.bot`, `https://attendee.minutes.bot`, and `notetaker@meet.minutes.bot`.
+Demo domains use `https://wgs.minutes.bot`, `https://attendee.wgs.minutes.bot`, and `notetaker@meet.minutes.bot`.
 
 Customer self-hosted examples use `https://notes.company.com`, `https://attendee.company.com`, and `notetaker@meet.company.com`.
 
@@ -42,9 +45,10 @@ wrangler secret put SESSION_SECRET
 - `pnpm test`
 - `pnpm typecheck`
 - `pnpm lint`
-- `pnpm run vercel:build`
 - `pnpm run deploy`
 - `pnpm setup:cloudflare`
+- `pnpm attendee:prepare`
+- `pnpm attendee:deploy`
 - `pnpm check`
 
 ## Docs
@@ -52,11 +56,11 @@ wrangler secret put SESSION_SECRET
 - [Architecture](docs/architecture.md)
 - [Cloudflare setup](docs/cloudflare-setup.md)
 - [Attendee setup](docs/attendee-setup.md)
+- [Attendee Container deployment](deploy/attendee-container/README.md)
 - [Security](docs/security.md)
 - [Operations](docs/operations.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Local development](docs/local-development.md)
-- [Vercel deployment](docs/vercel-deployment.md)
 - [Access control](docs/security-access-control.md)
 
 ## License Notes

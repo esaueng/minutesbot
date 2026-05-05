@@ -4,6 +4,8 @@ Run `pnpm setup:cloudflare` for guided commands. The script prints commands and 
 
 Use `pnpm run deploy` for deployments. Do not run `npx wrangler deploy` directly, because `pnpm run deploy` first runs the idempotent Cloudflare queue check required by this project.
 
+This repo is Cloudflare-first for the minutesbot control plane. The Worker serves the API and the Vite admin UI through Workers Static Assets; D1, R2, Queues, Workflows, and Email Routing are the production runtime.
+
 ## Resources
 
 - D1 database binding: `DB`
@@ -11,7 +13,11 @@ Use `pnpm run deploy` for deployments. Do not run `npx wrangler deploy` directly
 - Queues: `INVITE_QUEUE`, `SUMMARY_QUEUE`, `EMAIL_QUEUE`
 - Workflow binding: `MEETING_WORKFLOW`
 - Optional email binding: `SEND_EMAIL`
-- Optional service binding: `API_SERVICE`
+- Optional Attendee Container deployment: `deploy/attendee-container`
+
+## Environments
+
+The root `wrangler.jsonc` includes `staging` and `production` environments. Production points at `https://wgs.minutes.bot` and `https://attendee.wgs.minutes.bot`. Staging uses separate route/resource names and must have its placeholder D1 database id replaced before use.
 
 ## Commands
 
@@ -27,6 +33,21 @@ pnpm db:migrate:remote
 pnpm run deploy
 ```
 
-Configure Email Routing to send `notetaker@meet.company.com` to the Email Worker. Configure custom domains such as `notes.company.com`, `api.company.com`, and `meet.company.com` in Cloudflare DNS/routes.
+Use environment-specific commands when deploying staging:
+
+```bash
+wrangler d1 migrations apply minutesbot-staging --remote --env staging
+pnpm deploy:staging
+```
+
+Configure Email Routing to send `notetaker@meet.company.com` to the Email Worker. Configure custom domains such as `notes.company.com`, `api.company.com`, and `attendee.company.com` in Cloudflare DNS/routes.
 
 Protect the admin UI with Cloudflare Access for the MVP.
+
+## Attendee Boundary
+
+Attendee is not a Worker-native application. Use `deploy/attendee-container` to run upstream Attendee on Cloudflare Containers, backed by external Postgres and Redis-compatible services. Then set `ATTENDEE_API_BASE_URL` to the Attendee Container domain and configure the webhook URL in Attendee:
+
+```text
+https://<api-domain>/api/webhooks/attendee
+```

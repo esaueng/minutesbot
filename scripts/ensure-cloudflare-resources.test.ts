@@ -54,4 +54,27 @@ describe("ensureCloudflareResources", () => {
     ]);
     expect(errors).toContain("Failed to create Cloudflare Queue minutesbot-invites: authentication failed");
   });
+
+  it("uses staging queue names for the staging environment", async () => {
+    const commands: string[][] = [];
+
+    await ensureCloudflareResources({
+      environment: "staging",
+      runCommand: async (command, args) => {
+        commands.push([command, ...args]);
+        if (args[1] === "info") throw new Error("not found");
+      },
+      log: () => undefined,
+      error: () => undefined
+    });
+
+    expect(commands).toEqual([
+      ["wrangler", "queues", "info", "minutesbot-staging-invites"],
+      ["wrangler", "queues", "create", "minutesbot-staging-invites"],
+      ["wrangler", "queues", "info", "minutesbot-staging-summaries"],
+      ["wrangler", "queues", "create", "minutesbot-staging-summaries"],
+      ["wrangler", "queues", "info", "minutesbot-staging-email"],
+      ["wrangler", "queues", "create", "minutesbot-staging-email"]
+    ]);
+  });
 });

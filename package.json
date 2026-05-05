@@ -10,9 +10,12 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "tsc -p tsconfig.json --noEmit",
     "dev": "pnpm --filter @minutesbot/web dev",
-    "vercel:build": "pnpm --filter @minutesbot/web build",
     "cloudflare:ensure": "tsx scripts/ensure-cloudflare-resources.ts",
-    "deploy": "pnpm cloudflare:ensure && wrangler deploy",
+    "deploy": "pnpm deploy:production",
+    "deploy:staging": "pnpm cloudflare:ensure -- --env staging && wrangler deploy --env staging",
+    "deploy:production": "pnpm cloudflare:ensure -- --env production && wrangler deploy --env production",
+    "attendee:prepare": "tsx scripts/prepare-attendee-container.ts",
+    "attendee:deploy": "wrangler deploy --config deploy/attendee-container/wrangler.jsonc",
     "db:migrate:local": "wrangler d1 migrations apply minutesbot --local",
     "db:migrate:remote": "wrangler d1 migrations apply minutesbot --remote",
     "setup:cloudflare": "tsx scripts/setup-cloudflare.ts",
@@ -26,6 +29,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@cloudflare/containers": "^0.3.3",
     "@cloudflare/workers-types": "^4.20260421.0",
     "@types/node": "^22.10.7",
     "@types/react": "^19.0.7",

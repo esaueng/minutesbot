@@ -1,23 +1,28 @@
-console.log(`APP_BASE_URL=https://app.minutes.bot
-API_BASE_URL=https://api.minutes.bot
-ATTENDEE_API_BASE_URL=https://attendee.minutes.bot
+console.log(`# minutesbot Cloudflare Worker
+APP_BASE_URL=https://wgs.minutes.bot
+API_BASE_URL=https://wgs.minutes.bot
+ATTENDEE_API_BASE_URL=https://attendee.wgs.minutes.bot
 DEFAULT_RECORDER_EMAIL=notetaker@meet.minutes.bot
 DEFAULT_SENDER_EMAIL=notetaker@meet.minutes.bot
-ENVIRONMENT=production`);
-console.log(`
-# Vercel
-APP_BASE_URL=https://your-vercel-domain.example
-API_BASE_URL=https://your-vercel-domain.example
+ENVIRONMENT=production
 VITE_CLERK_PUBLISHABLE_KEY=pk_...
 CLERK_PUBLISHABLE_KEY=pk_...
 CLERK_SECRET_KEY=sk_...
-CLERK_AUTHORIZED_PARTIES=https://your-vercel-domain.example
+CLERK_AUTHORIZED_PARTIES=https://wgs.minutes.bot
 ADMIN_EMAILS=admin@example.com
-ATTENDEE_API_BASE_URL=https://your-attendee-domain.example
-DEFAULT_RECORDER_EMAIL=notetaker@example.com
-DEFAULT_SENDER_EMAIL=notetaker@example.com
-ENVIRONMENT=production
 ATTENDEE_API_KEY=
 ATTENDEE_WEBHOOK_SECRET=
 AI_API_KEY=
-SESSION_SECRET=`);
+SESSION_SECRET=
+
+# Attendee Cloudflare Container router
+DATABASE_URL=postgres://...
+REDIS_URL=redis://...
+SECRET_KEY=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_STORAGE_BUCKET_NAME=
+AWS_S3_ENDPOINT_URL=
+DEEPGRAM_API_KEY=
+ZOOM_CLIENT_ID=
+ZOOM_CLIENT_SECRET=`);
