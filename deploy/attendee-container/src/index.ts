@@ -1,32 +1,12 @@
 import { Container, getContainer, getRandom } from "@cloudflare/containers";
 import { env as workerEnv } from "cloudflare:workers";
+import { buildContainerEnv, missingSettings, type AttendeeContainerSettings } from "./env";
 
-type AttendeeContainerEnv = {
+type AttendeeContainerEnv = AttendeeContainerSettings & {
   ATTENDEE_WEB: DurableObjectNamespace<AttendeeWebContainer>;
   ATTENDEE_WORKER: DurableObjectNamespace<AttendeeWorkerContainer>;
   ATTENDEE_SCHEDULER: DurableObjectNamespace<AttendeeSchedulerContainer>;
-  ATTENDEE_WEB_INSTANCES?: string;
-  ATTENDEE_CONTAINER_SLEEP_AFTER?: string;
-  DJANGO_SETTINGS_MODULE?: string;
-  DATABASE_URL?: string;
-  REDIS_URL?: string;
-  SECRET_KEY?: string;
-  AWS_ACCESS_KEY_ID?: string;
-  AWS_SECRET_ACCESS_KEY?: string;
-  AWS_STORAGE_BUCKET_NAME?: string;
-  AWS_S3_ENDPOINT_URL?: string;
-  AWS_S3_REGION_NAME?: string;
-  EMAIL_HOST_USER?: string;
-  EMAIL_HOST_PASSWORD?: string;
-  DEEPGRAM_API_KEY?: string;
-  OPENAI_API_KEY?: string;
-  OPENAI_BASE_URL?: string;
-  OPENAI_MODEL_NAME?: string;
-  ZOOM_CLIENT_ID?: string;
-  ZOOM_CLIENT_SECRET?: string;
 };
-
-const requiredSettings = ["DATABASE_URL", "REDIS_URL", "SECRET_KEY"] as const;
 
 export class AttendeeWebContainer extends Container {
   defaultPort = 8000;
@@ -88,40 +68,6 @@ async function startBackgroundContainers(env: AttendeeContainerEnv): Promise<voi
     envVars: runtimeEnv,
     entrypoint: ["python", "manage.py", "run_scheduler"]
   });
-}
-
-function buildContainerEnv(env: AttendeeContainerEnv): Record<string, string> {
-  const result: Record<string, string> = {
-    DJANGO_SETTINGS_MODULE: env.DJANGO_SETTINGS_MODULE || "attendee.settings.production"
-  };
-
-  for (const key of [
-    "DATABASE_URL",
-    "REDIS_URL",
-    "SECRET_KEY",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "AWS_STORAGE_BUCKET_NAME",
-    "AWS_S3_ENDPOINT_URL",
-    "AWS_S3_REGION_NAME",
-    "EMAIL_HOST_USER",
-    "EMAIL_HOST_PASSWORD",
-    "DEEPGRAM_API_KEY",
-    "OPENAI_API_KEY",
-    "OPENAI_BASE_URL",
-    "OPENAI_MODEL_NAME",
-    "ZOOM_CLIENT_ID",
-    "ZOOM_CLIENT_SECRET"
-  ] as const) {
-    const value = env[key];
-    if (value) result[key] = value;
-  }
-
-  return result;
-}
-
-function missingSettings(env: AttendeeContainerEnv): string[] {
-  return requiredSettings.filter((key) => !env[key]);
 }
 
 function getGlobal(key: "ATTENDEE_CONTAINER_SLEEP_AFTER"): string | undefined {

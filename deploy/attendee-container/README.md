@@ -21,9 +21,11 @@ Install root dependencies, prepare Attendee, then deploy this router:
 ```bash
 pnpm install
 pnpm attendee:prepare
+python .attendee/upstream/init_env.py
 wrangler secret put DATABASE_URL --config deploy/attendee-container/wrangler.jsonc
 wrangler secret put REDIS_URL --config deploy/attendee-container/wrangler.jsonc
-wrangler secret put SECRET_KEY --config deploy/attendee-container/wrangler.jsonc
+wrangler secret put DJANGO_SECRET_KEY --config deploy/attendee-container/wrangler.jsonc
+wrangler secret put CREDENTIALS_ENCRYPTION_KEY --config deploy/attendee-container/wrangler.jsonc
 pnpm attendee:deploy
 ```
 
@@ -32,14 +34,14 @@ Set additional Attendee/provider secrets as needed:
 ```bash
 wrangler secret put AWS_ACCESS_KEY_ID --config deploy/attendee-container/wrangler.jsonc
 wrangler secret put AWS_SECRET_ACCESS_KEY --config deploy/attendee-container/wrangler.jsonc
-wrangler secret put AWS_STORAGE_BUCKET_NAME --config deploy/attendee-container/wrangler.jsonc
-wrangler secret put AWS_S3_ENDPOINT_URL --config deploy/attendee-container/wrangler.jsonc
+wrangler secret put AWS_RECORDING_STORAGE_BUCKET_NAME --config deploy/attendee-container/wrangler.jsonc
+wrangler secret put AWS_ENDPOINT_URL --config deploy/attendee-container/wrangler.jsonc
 wrangler secret put DEEPGRAM_API_KEY --config deploy/attendee-container/wrangler.jsonc
 wrangler secret put ZOOM_CLIENT_ID --config deploy/attendee-container/wrangler.jsonc
 wrangler secret put ZOOM_CLIENT_SECRET --config deploy/attendee-container/wrangler.jsonc
 ```
 
-Use R2 S3 API credentials for the AWS/S3 settings if you want Attendee object storage on Cloudflare R2.
+Use R2 S3 API credentials for the AWS/S3 settings if you want Attendee object storage on Cloudflare R2. Legacy `SECRET_KEY`, `AWS_STORAGE_BUCKET_NAME`, and `AWS_S3_ENDPOINT_URL` secrets are still mapped into Attendee's upstream names as a temporary compatibility bridge.
 
 ## Operations
 

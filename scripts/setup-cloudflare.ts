@@ -13,13 +13,15 @@ const commands = [
   "pnpm attendee:prepare",
   "wrangler secret put DATABASE_URL --config deploy/attendee-container/wrangler.jsonc",
   "wrangler secret put REDIS_URL --config deploy/attendee-container/wrangler.jsonc",
-  "wrangler secret put SECRET_KEY --config deploy/attendee-container/wrangler.jsonc",
+  "python .attendee/upstream/init_env.py",
+  "wrangler secret put DJANGO_SECRET_KEY --config deploy/attendee-container/wrangler.jsonc",
+  "wrangler secret put CREDENTIALS_ENCRYPTION_KEY --config deploy/attendee-container/wrangler.jsonc",
   "pnpm attendee:deploy"
 ];
 
 console.log("minutesbot Cloudflare setup checklist\n");
 for (const command of commands) console.log(`- ${command}`);
 console.log("\nUse pnpm run deploy for minutesbot deployments so Cloudflare queues are checked before Wrangler runs.");
-console.log("Use pnpm attendee:deploy only after configuring external Postgres and Redis for Attendee.");
+console.log("Use pnpm attendee:deploy only after configuring external Postgres, Redis, and generated Attendee secrets.");
 console.log("Also configure Email Routing for notetaker@meet.company.com and custom domains for app/API/attendee hosts.");
 console.log("Production custom domains are admin.wgs.bot and minutesbot.wgsglobal.app. Keep both zones delegated to abby.ns.cloudflare.com and arvind.ns.cloudflare.com.");

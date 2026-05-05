@@ -30,13 +30,15 @@ For Cloudflare Containers, use the scaffold in `deploy/attendee-container`:
 
 ```bash
 pnpm attendee:prepare
+python .attendee/upstream/init_env.py
 wrangler secret put DATABASE_URL --config deploy/attendee-container/wrangler.jsonc
 wrangler secret put REDIS_URL --config deploy/attendee-container/wrangler.jsonc
-wrangler secret put SECRET_KEY --config deploy/attendee-container/wrangler.jsonc
+wrangler secret put DJANGO_SECRET_KEY --config deploy/attendee-container/wrangler.jsonc
+wrangler secret put CREDENTIALS_ENCRYPTION_KEY --config deploy/attendee-container/wrangler.jsonc
 pnpm attendee:deploy
 ```
 
-Attendee companion services and credentials still need to be supplied: Postgres, Redis-compatible cache/broker, object storage credentials, meeting platform credentials, transcription provider credentials, and mail settings. R2 can be used through its S3-compatible API for object storage, but it does not replace Postgres or Redis.
+Attendee companion services and credentials still need to be supplied: Postgres, Redis-compatible cache/broker, object storage credentials, meeting platform credentials, transcription provider credentials, and mail settings. R2 can be used through its S3-compatible API for object storage by setting `AWS_RECORDING_STORAGE_BUCKET_NAME`, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY`, but it does not replace Postgres or Redis. Legacy `SECRET_KEY`, `AWS_STORAGE_BUCKET_NAME`, and `AWS_S3_ENDPOINT_URL` secrets are temporarily mapped for compatibility; new deployments should use the upstream Attendee names above.
 
 Review Attendee's Elastic License 2.0, including managed-service restrictions.
 
