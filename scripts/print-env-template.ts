@@ -8,6 +8,11 @@ console.log(`
 # Vercel
 APP_BASE_URL=https://your-vercel-domain.example
 API_BASE_URL=https://your-vercel-domain.example
+VITE_CLERK_PUBLISHABLE_KEY=pk_...
+CLERK_PUBLISHABLE_KEY=pk_...
+CLERK_SECRET_KEY=sk_...
+CLERK_AUTHORIZED_PARTIES=https://your-vercel-domain.example
+ADMIN_EMAILS=admin@example.com
 ATTENDEE_API_BASE_URL=https://your-attendee-domain.example
 DEFAULT_RECORDER_EMAIL=notetaker@example.com
 DEFAULT_SENDER_EMAIL=notetaker@example.com

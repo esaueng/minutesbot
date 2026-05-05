@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { toErrorResponse } from "@minutesbot/shared";
 import type { Env } from "./env";
 import { auditLogsRoute } from "./routes/auditLogs";
 import { artifactsRoute } from "./routes/artifacts";
@@ -9,14 +10,21 @@ import { settingsRoute } from "./routes/settings";
 import { testActionsRoute } from "./routes/testActions";
 import { corsMiddleware } from "./middleware/cors";
 import { errorMiddleware } from "./middleware/errors";
+import { clerkAuthMiddleware } from "./middleware/auth";
 import { cleanupOldArtifacts, handleQueueBatch } from "../../workflow-worker/src/queueConsumers";
 
 export { MeetingWorkflow } from "../../workflow-worker/src/meetingWorkflow";
 
 export const app = new Hono<{ Bindings: Env }>();
 
+app.onError((error, c) => {
+  const response = toErrorResponse(error);
+  return c.json(response.body, response.status as 400);
+});
+
 app.use("*", errorMiddleware);
 app.use("*", corsMiddleware);
+app.use("/api/*", clerkAuthMiddleware);
 app.options("*", (c) => c.body(null, 204));
 
 app.route("/api/health", healthRoute);

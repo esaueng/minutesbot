@@ -1,6 +1,11 @@
 import type { AppSettings } from "@minutesbot/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+let authTokenProvider: (() => Promise<string | null>) | null = null;
+
+export function setApiAuthTokenProvider(provider: (() => Promise<string | null>) | null): void {
+  authTokenProvider = provider;
+}
 
 export async function apiGet<T>(path: string): Promise<T> {
   return request<T>(path);
@@ -27,9 +32,11 @@ export async function saveSettings(settings: AppSettings): Promise<AppSettings> 
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = authTokenProvider ? await authTokenProvider() : null;
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
       "content-type": "application/json",
       ...(init.headers ?? {})
     }

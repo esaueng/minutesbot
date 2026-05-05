@@ -57,6 +57,7 @@ wrangler secret put SESSION_SECRET
 - [Troubleshooting](docs/troubleshooting.md)
 - [Local development](docs/local-development.md)
 - [Vercel deployment](docs/vercel-deployment.md)
+- [Access control](docs/security-access-control.md)
 
 ## License Notes
 

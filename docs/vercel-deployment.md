@@ -26,6 +26,11 @@ Set these in Vercel project settings:
 ```text
 APP_BASE_URL=https://your-vercel-domain.example
 API_BASE_URL=https://your-vercel-domain.example
+VITE_CLERK_PUBLISHABLE_KEY=pk_...
+CLERK_PUBLISHABLE_KEY=pk_...
+CLERK_SECRET_KEY=sk_...
+CLERK_AUTHORIZED_PARTIES=https://your-vercel-domain.example
+ADMIN_EMAILS=admin@example.com
 ATTENDEE_API_BASE_URL=https://your-attendee-domain.example
 DEFAULT_RECORDER_EMAIL=notetaker@example.com
 DEFAULT_SENDER_EMAIL=notetaker@example.com
@@ -35,6 +40,8 @@ ATTENDEE_WEBHOOK_SECRET=...
 AI_API_KEY=...
 SESSION_SECRET=...
 ```
+
+Configure Clerk in restricted sign-up mode so only invited or manually created administrators can access the app. See [Access Control](security-access-control.md).
 
 ## Attendee Boundary
 
@@ -48,4 +55,3 @@ To remove the remaining Cloudflare runtime dependencies, add adapters for:
 - Vercel Blob for invite, transcript, summary, and artifact storage.
 - Vercel Queues and Cron endpoints for async processing.
 - An inbound email provider that posts invite payloads to a Vercel API route.
-

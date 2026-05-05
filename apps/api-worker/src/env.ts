@@ -26,4 +26,9 @@ export type Env = {
   EMAIL_API_KEY?: string;
   SMTP_PASSWORD?: string;
   SESSION_SECRET?: string;
+  CLERK_SECRET_KEY?: string;
+  CLERK_PUBLISHABLE_KEY?: string;
+  CLERK_AUTHORIZED_PARTIES?: string;
+  CLERK_ADMIN_USER_IDS?: string;
+  ADMIN_EMAILS?: string;
 };

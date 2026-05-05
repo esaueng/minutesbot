@@ -21,7 +21,12 @@ export function createVercelEnv(source: VercelProcessEnv = process.env): Env {
     AI_API_KEY: source.AI_API_KEY,
     EMAIL_API_KEY: source.EMAIL_API_KEY,
     SMTP_PASSWORD: source.SMTP_PASSWORD,
-    SESSION_SECRET: source.SESSION_SECRET
+    SESSION_SECRET: source.SESSION_SECRET,
+    CLERK_SECRET_KEY: source.CLERK_SECRET_KEY,
+    CLERK_PUBLISHABLE_KEY: source.CLERK_PUBLISHABLE_KEY ?? source.VITE_CLERK_PUBLISHABLE_KEY,
+    CLERK_AUTHORIZED_PARTIES: source.CLERK_AUTHORIZED_PARTIES,
+    CLERK_ADMIN_USER_IDS: source.CLERK_ADMIN_USER_IDS,
+    ADMIN_EMAILS: source.ADMIN_EMAILS
   };
 }
 
@@ -100,4 +105,3 @@ function createUnsupportedWorkflow(binding: string): WorkflowBinding {
     }
   };
 }
-

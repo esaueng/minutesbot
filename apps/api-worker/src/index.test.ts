@@ -9,6 +9,17 @@ describe("api worker", () => {
     await expect(response.json()).resolves.toEqual({ ok: true });
   });
 
+  it("requires auth configuration for protected admin routes", async () => {
+    const response = await app.request("/api/settings");
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "AUTH_NOT_CONFIGURED",
+        message: "Configure ADMIN_EMAILS or CLERK_ADMIN_USER_IDS before exposing admin routes."
+      }
+    });
+  });
+
   it("exports the configured meeting workflow entrypoint", () => {
     expect(entrypoint).toHaveProperty("MeetingWorkflow");
   });
