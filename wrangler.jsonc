@@ -67,7 +67,7 @@
   "send_email": [
     {
       "name": "SEND_EMAIL",
-      "destination_address": "notetaker@wgs.bot"
+      "allowed_sender_addresses": ["notetaker@wgs.bot"]
     }
   ],
   "env": {
@@ -122,7 +122,7 @@
       "send_email": [
         {
           "name": "SEND_EMAIL",
-          "destination_address": "notetaker-staging@wgs.bot"
+          "allowed_sender_addresses": ["notetaker-staging@wgs.bot"]
         }
       ]
     },
@@ -181,7 +181,7 @@
       "send_email": [
         {
           "name": "SEND_EMAIL",
-          "destination_address": "notetaker@wgs.bot"
+          "allowed_sender_addresses": ["notetaker@wgs.bot"]
         }
       ]
     }

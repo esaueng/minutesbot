@@ -1,6 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as entrypoint from "./index";
 import { app } from "./index";
+
+class FakeD1 {
+  prepare() {
+    return {
+      bind() {
+        return this;
+      },
+      async first() {
+        return null;
+      },
+      async run() {
+        return { success: true };
+      },
+      async all() {
+        return { results: [] };
+      }
+    };
+  }
+}
 
 describe("api worker", () => {
   it("returns health", async () => {
@@ -22,5 +41,43 @@ describe("api worker", () => {
 
   it("exports the configured meeting workflow entrypoint", () => {
     expect(entrypoint).toHaveProperty("MeetingWorkflow");
+  });
+
+  it("handles inbound email on the deployed worker entrypoint", async () => {
+    const raw = `From: Alice <alice@wgs.bot>
+To: Alice <alice@wgs.bot>
+
+BEGIN:VCALENDAR
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:test-api-email
+SUMMARY:API Entrypoint Test
+DTSTART:20260504T150000Z
+DTEND:20260504T153000Z
+ORGANIZER;CN=Alice:mailto:alice@wgs.bot
+ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@wgs.bot
+DESCRIPTION:https://teams.microsoft.com/l/meetup-join/19%3atest%40thread.v2/0?context=%7b%7d
+END:VEVENT
+END:VCALENDAR`;
+    const createWorkflow = vi.fn(async () => undefined);
+    const waitUntil = vi.fn((promise: Promise<unknown>) => promise);
+
+    await entrypoint.default.email(
+      {
+        from: "alice@wgs.bot",
+        to: "notetaker@wgs.bot",
+        raw: new Response(raw).body!,
+        setReject: vi.fn()
+      },
+      {
+        DB: new FakeD1() as unknown as D1Database,
+        ARTIFACTS: { put: vi.fn(async () => undefined) } as unknown as R2Bucket,
+        MEETING_WORKFLOW: { create: createWorkflow }
+      },
+      { waitUntil } as unknown as ExecutionContext
+    );
+
+    await waitUntil.mock.calls[0][0];
+    expect(createWorkflow).toHaveBeenCalledOnce();
   });
 });

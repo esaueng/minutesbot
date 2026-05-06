@@ -1,7 +1,7 @@
-import { createArtifact, createAuditLog, getSettings, replaceMeetingAttendees, updateMeetingStatus, upsertMeeting } from "@minutesbot/db";
+import { createArtifact, createAuditLog, getSettings, replaceMeetingAttendees, upsertMeeting } from "@minutesbot/db";
 import { parseIncomingInvite } from "@minutesbot/invite-parser";
-import { filterSummaryRecipients, getEmailDomain, isAllowedDomain } from "@minutesbot/recipient-policy";
-import { createId, nowIso, type MeetingStatus } from "@minutesbot/shared";
+import { buildSummaryRecipients, getEmailDomain, isAllowedDomain } from "@minutesbot/recipient-policy";
+import { createId, type MeetingStatus } from "@minutesbot/shared";
 
 type Env = {
   DB: D1Database;
@@ -37,7 +37,7 @@ export async function handleInvite(message: Pick<EmailMessage, "from" | "to" | "
     return;
   }
 
-  if (parsed.rawRecipient.toLowerCase() !== settings.recorderEmail.toLowerCase()) {
+  if (message.to.toLowerCase() !== settings.recorderEmail.toLowerCase()) {
     await rejectInvite(env, message, "REJECTED_INVALID_RECIPIENT", "Inbound recipient does not match configured recorder email");
     return;
   }
@@ -50,16 +50,18 @@ export async function handleInvite(message: Pick<EmailMessage, "from" | "to" | "
   const organizerDomain = getEmailDomain(parsed.organizer.email);
   if (
     settings.policy.rejectExternalOrganizers &&
-    (!organizerDomain || !isAllowedDomain(organizerDomain, settings.allowedDomains, settings.policy.allowSubdomains))
+    (!organizerDomain || !isAllowedDomain(organizerDomain, [settings.primaryDomain, ...settings.allowedDomains], settings.policy.allowSubdomains))
   ) {
     await rejectInvite(env, message, "REJECTED_EXTERNAL_ORGANIZER", "Organizer domain is not allowed");
     return;
   }
 
-  const filtered = filterSummaryRecipients(parsed.attendees, {
+  const filtered = buildSummaryRecipients({
+    organizer: parsed.organizer,
+    attendees: parsed.attendees,
+    primaryDomain: settings.primaryDomain,
     allowedDomains: settings.allowedDomains,
-    allowSubdomains: settings.policy.allowSubdomains,
-    sendToExternalAttendees: false
+    allowSubdomains: settings.policy.allowSubdomains
   });
 
   if (settings.policy.requireAtLeastOneEligibleRecipient && filtered.included.length === 0) {

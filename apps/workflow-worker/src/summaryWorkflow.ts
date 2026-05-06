@@ -1,6 +1,6 @@
-import { createAuditLog, createSummary, getMeeting, getSettings, listArtifacts, listMeetingAttendees, updateSummaryStatus } from "@minutesbot/db";
+import { createAuditLog, createEmailDelivery, createSummary, getMeeting, getSettings, listArtifacts, listMeetingAttendees, updateSummaryStatus } from "@minutesbot/db";
 import { renderSummaryEmail } from "@minutesbot/email-renderer";
-import { filterSummaryRecipients } from "@minutesbot/recipient-policy";
+import { buildSummaryRecipients } from "@minutesbot/recipient-policy";
 import { createOpenAiCompatibleProvider, summarizeTranscript } from "@minutesbot/summary-engine";
 import { AppError } from "@minutesbot/shared";
 import { createEmailProvider } from "@minutesbot/email-sender";
@@ -56,10 +56,12 @@ export async function generateAndSendSummary(
   await updateSummaryStatus(env.DB, meetingId, "ready", "SUMMARY_READY");
   await createAuditLog(env.DB, { eventType: "summary.generated", resourceType: "meeting", resourceId: meetingId });
 
-  const filtered = filterSummaryRecipients(attendees.map((attendee) => ({ email: attendee.email, name: attendee.name ?? undefined })), {
+  const filtered = buildSummaryRecipients({
+    organizer: meeting.organizer_email ? { email: meeting.organizer_email, name: meeting.organizer_name ?? undefined } : null,
+    attendees: attendees.map((attendee) => ({ email: attendee.email, name: attendee.name ?? undefined })),
+    primaryDomain: settings.primaryDomain,
     allowedDomains: settings.allowedDomains,
-    allowSubdomains: settings.policy.allowSubdomains,
-    sendToExternalAttendees: false
+    allowSubdomains: settings.policy.allowSubdomains
   });
   if (filtered.included.length === 0) {
     await updateSummaryStatus(env.DB, meetingId, "failed", "FAILED");
@@ -73,9 +75,37 @@ export async function generateAndSendSummary(
     excludedRecipients: filtered.excluded.map((recipient) => recipient.email)
   });
   const sender = createEmailProvider({ provider: settings.email.provider, sendEmailBinding: env.SEND_EMAIL });
+  let sentCount = 0;
   for (const recipient of filtered.included) {
-    await sender.send({ from: settings.email.senderEmail, to: recipient.email, ...email });
+    try {
+      const result = await sender.send({ from: settings.email.senderEmail, to: recipient.email, ...email });
+      if (result.status === "sent") sentCount += 1;
+      await createEmailDelivery(env.DB, {
+        meeting_id: meetingId,
+        recipient_email: recipient.email,
+        type: "summary",
+        status: result.status,
+        provider_message_id: result.providerMessageId ?? null,
+        failure_reason: result.failureReason ?? null,
+        sent_at: result.status === "sent" ? new Date().toISOString() : null
+      });
+    } catch (error) {
+      await createEmailDelivery(env.DB, {
+        meeting_id: meetingId,
+        recipient_email: recipient.email,
+        type: "summary",
+        status: "failed",
+        provider_message_id: null,
+        failure_reason: error instanceof Error ? error.message : "Email send failed",
+        sent_at: null
+      });
+    }
+  }
+  if (sentCount === 0) {
+    await updateSummaryStatus(env.DB, meetingId, "failed", "FAILED");
+    await createAuditLog(env.DB, { eventType: "summary.failed", resourceType: "meeting", resourceId: meetingId, metadata: { reason: "email delivery failed" } });
+    return;
   }
   await updateSummaryStatus(env.DB, meetingId, "sent", "SUMMARY_SENT");
-  await createAuditLog(env.DB, { eventType: "summary.sent", resourceType: "meeting", resourceId: meetingId, metadata: { recipients: filtered.included.length } });
+  await createAuditLog(env.DB, { eventType: "summary.sent", resourceType: "meeting", resourceId: meetingId, metadata: { recipients: sentCount } });
 }
