@@ -12,7 +12,7 @@ export function Meetings() {
   }, []);
   return (
     <div className="page">
-      <header><h1>Meetings</h1><p>Meeting records created from Teams calendar invites.</p></header>
+      <header><h1>Meetings</h1><p>All meeting records created from Teams calendar invites and forwarded Teams links.</p></header>
       {error ? <p className="errorText">{error}</p> : <MeetingTable meetings={meetings} />}
     </div>
   );

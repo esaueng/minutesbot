@@ -64,7 +64,7 @@ export async function upsertMeeting(
 }
 
 export async function listMeetings(db: D1Database): Promise<MeetingRow[]> {
-  const result = await db.prepare("SELECT * FROM meetings ORDER BY start_time DESC, created_at DESC LIMIT 200").all<MeetingRow>();
+  const result = await db.prepare("SELECT * FROM meetings ORDER BY start_time DESC, created_at DESC").all<MeetingRow>();
   return result.results ?? [];
 }
 
