@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const legacySelfHostedAttendeeBaseUrl = "https://attendee.wgsglobal.app";
+const legacySelfHostedAttendeeBaseUrls = new Set(["https://attendee.wgsglobal.app", "https://attendee.wgs.bot"]);
 
 const domainSchema = z
   .string()
@@ -109,6 +109,6 @@ export function parseSettings(input: unknown): AppSettings {
 }
 
 export function resolveAttendeeBaseUrl(settingsBaseUrl: string, envBaseUrl?: string): string {
-  if (settingsBaseUrl === legacySelfHostedAttendeeBaseUrl && envBaseUrl) return envBaseUrl;
+  if (legacySelfHostedAttendeeBaseUrls.has(settingsBaseUrl.replace(/\/+$/, "")) && envBaseUrl) return envBaseUrl;
   return settingsBaseUrl || envBaseUrl || defaultSettings.attendee.baseUrl;
 }
