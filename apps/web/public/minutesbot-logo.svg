@@ -3,17 +3,17 @@
   <desc id="desc">A smiling robot face with a clock hand.</desc>
   <defs>
     <radialGradient id="background" cx="50%" cy="42%" r="68%">
-      <stop offset="0%" stop-color="#545454"/>
-      <stop offset="58%" stop-color="#383838"/>
-      <stop offset="100%" stop-color="#252525"/>
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="58%" stop-color="#e5e7eb"/>
+      <stop offset="100%" stop-color="#cbd5e1"/>
     </radialGradient>
     <linearGradient id="line" x1="246" x2="778" y1="226" y2="786" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="#050505"/>
       <stop offset="100%" stop-color="#111111"/>
     </linearGradient>
     <filter id="softInset" x="-6%" y="-6%" width="112%" height="112%">
-      <feDropShadow dx="0" dy="1" stdDeviation="1.25" flood-color="#6b6b6b" flood-opacity=".22"/>
-      <feDropShadow dx="0" dy="-1" stdDeviation=".85" flood-color="#000000" flood-opacity=".5"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="1.25" flood-color="#ffffff" flood-opacity=".5"/>
+      <feDropShadow dx="0" dy="-1" stdDeviation=".85" flood-color="#000000" flood-opacity=".22"/>
     </filter>
   </defs>
   <rect width="1024" height="1024" fill="url(#background)"/>
