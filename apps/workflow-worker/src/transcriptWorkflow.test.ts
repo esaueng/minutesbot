@@ -3,10 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchAndStoreTranscript } from "./transcriptWorkflow";
 
 const getBotRecording = vi.fn();
+const getBotTranscript = vi.fn();
 const transcribe = vi.fn();
 
 vi.mock("@minutesbot/attendee-client", () => ({
-  AttendeeClient: vi.fn(() => ({ getBotRecording, deleteBotData: vi.fn() }))
+  AttendeeClient: vi.fn(() => ({ getBotRecording, getBotTranscript, deleteBotData: vi.fn() }))
 }));
 
 vi.mock("@minutesbot/summary-engine", async (importOriginal) => ({
@@ -54,13 +55,55 @@ class FakeD1 {
 describe("transcript workflow", () => {
   beforeEach(() => {
     getBotRecording.mockReset();
+    getBotTranscript.mockReset();
     transcribe.mockReset();
   });
 
-  it("stores Attendee recording, transcribes through OpenRouter, and queues recap generation", async () => {
+  it("stores Attendee transcript segments without re-transcribing the recording", async () => {
     const db = new FakeD1();
     const r2Put = vi.fn(async () => undefined);
     const summaryQueue = { send: vi.fn() };
+    getBotRecording.mockResolvedValue({ data: new Uint8Array([1, 2, 3]).buffer, contentType: "audio/mp4", sizeBytes: 3 });
+    getBotTranscript.mockResolvedValue([
+      {
+        speaker_name: "Alex",
+        speaker_uuid: "speaker-1",
+        speaker_user_uuid: "user-1",
+        timestamp_ms: 7000,
+        duration_ms: 1800,
+        transcription: { transcript: "Hello from Attendee." }
+      }
+    ]);
+
+    await fetchAndStoreTranscript(
+      {
+        DB: db as unknown as D1Database,
+        ARTIFACTS: { put: r2Put } as unknown as R2Bucket,
+        INVITE_QUEUE: { send: vi.fn() },
+        SUMMARY_QUEUE: summaryQueue,
+        EMAIL_QUEUE: { send: vi.fn() },
+        ATTENDEE_API_BASE_URL: "https://attendee.wgsglobal.app",
+        API_BASE_URL: "https://minutesbot.wgsglobal.app",
+        ATTENDEE_API_KEY: "attendee-key",
+        AI_API_KEY: "openrouter-key"
+      },
+      "mtg_1"
+    );
+
+    expect(getBotTranscript).toHaveBeenCalledWith("bot_1");
+    expect(getBotRecording).toHaveBeenCalledWith("bot_1");
+    expect(transcribe).not.toHaveBeenCalled();
+    expect(r2Put).toHaveBeenCalledWith("recordings/mtg_1/recording.mp4", expect.any(ArrayBuffer), expect.any(Object));
+    expect(r2Put).toHaveBeenCalledWith("transcripts/mtg_1/transcript.txt", "Alex: Hello from Attendee.", expect.any(Object));
+    expect(db.artifacts.map((values) => values[2])).toEqual(["recording", "transcript_text", "transcript_json"]);
+    expect(summaryQueue.send).toHaveBeenCalledWith({ type: "summarize", meetingId: "mtg_1" });
+  });
+
+  it("falls back to OpenRouter transcription when Attendee has no transcript", async () => {
+    const db = new FakeD1();
+    const r2Put = vi.fn(async () => undefined);
+    const summaryQueue = { send: vi.fn() };
+    getBotTranscript.mockResolvedValue([]);
     getBotRecording.mockResolvedValue({ data: new Uint8Array([1, 2, 3]).buffer, contentType: "audio/mp4", sizeBytes: 3 });
     transcribe.mockResolvedValue({ text: "Alex: hello", usage: { seconds: 2.5 } });
 
@@ -79,16 +122,15 @@ describe("transcript workflow", () => {
       "mtg_1"
     );
 
-    expect(getBotRecording).toHaveBeenCalledWith("bot_1");
+    expect(getBotTranscript).toHaveBeenCalledWith("bot_1");
     expect(transcribe).toHaveBeenCalledWith(expect.any(ArrayBuffer), "audio/mp4");
-    expect(r2Put).toHaveBeenCalledWith("recordings/mtg_1/recording.mp4", expect.any(ArrayBuffer), expect.any(Object));
     expect(r2Put).toHaveBeenCalledWith("transcripts/mtg_1/transcript.txt", "Alex: hello", expect.any(Object));
-    expect(db.artifacts.map((values) => values[2])).toEqual(["recording", "transcript_text", "transcript_json"]);
     expect(summaryQueue.send).toHaveBeenCalledWith({ type: "summarize", meetingId: "mtg_1" });
   });
 
-  it("marks transcript failed when OpenRouter transcription fails", async () => {
+  it("marks transcript failed when transcript fetching and OpenRouter transcription fail", async () => {
     const db = new FakeD1();
+    getBotTranscript.mockResolvedValue([]);
     getBotRecording.mockResolvedValue({ data: new Uint8Array([1, 2, 3]).buffer, contentType: "audio/mp4", sizeBytes: 3 });
     transcribe.mockRejectedValue(new Error("STT unavailable"));
 

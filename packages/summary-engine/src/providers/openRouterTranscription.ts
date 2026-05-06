@@ -39,6 +39,7 @@ export function createOpenRouterTranscriptionProvider(options: OpenRouterTranscr
 
 function audioFormat(contentType: string): string {
   const type = contentType.split(";")[0]?.trim().toLowerCase();
+  if (type === "video/mp4") return "mp4";
   if (!type?.startsWith("audio/")) return "mp3";
   const subtype = type.slice("audio/".length);
   if (subtype === "mpeg") return "mp3";

@@ -29,4 +29,26 @@ describe("OpenRouter transcription provider", () => {
       })
     );
   });
+
+  it("preserves mp4 format for Attendee video recordings", async () => {
+    const fetcher = vi.fn(async () => Response.json({ text: "Alex: hello" }));
+    const provider = createOpenRouterTranscriptionProvider({
+      baseUrl: "https://openrouter.ai/api/v1",
+      apiKey: "secret",
+      model: "openai/whisper-large-v3",
+      fetcher
+    });
+
+    await provider.transcribe(new Uint8Array([1, 2, 3]).buffer, "video/mp4");
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://openrouter.ai/api/v1/audio/transcriptions",
+      expect.objectContaining({
+        body: JSON.stringify({
+          input_audio: { data: "AQID", format: "mp4" },
+          model: "openai/whisper-large-v3"
+        })
+      })
+    );
+  });
 });

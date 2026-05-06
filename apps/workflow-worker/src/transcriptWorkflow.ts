@@ -1,5 +1,5 @@
-import { AttendeeClient } from "@minutesbot/attendee-client";
-import { createArtifact, createAuditLog, getMeeting, getSettings, updateTranscriptStatus } from "@minutesbot/db";
+import { AttendeeClient, type AttendeeTranscriptSegment } from "@minutesbot/attendee-client";
+import { createArtifact, createAuditLog, getMeeting, getSettings, insertTranscriptSegment, updateTranscriptStatus } from "@minutesbot/db";
 import { createOpenRouterTranscriptionProvider } from "@minutesbot/summary-engine";
 import { AppError, resolveAttendeeBaseUrl } from "@minutesbot/shared";
 import { WorkflowEntrypoint } from "cloudflare:workers";
@@ -29,7 +29,7 @@ export async function fetchAndStoreTranscript(
 
   const client = new AttendeeClient({ baseUrl: resolveAttendeeBaseUrl(settings.attendee.baseUrl, env.ATTENDEE_API_BASE_URL), apiKey: env.ATTENDEE_API_KEY });
   try {
-    if (!env.AI_API_KEY) throw new AppError("AI_API_KEY_MISSING", "AI_API_KEY secret is not configured", 500);
+    const attendeeTranscript = await runStep("fetch Attendee transcript", () => client.getBotTranscript(attendeeBotId));
     const recording = await runStep("fetch recording", () => client.getBotRecording(attendeeBotId));
     const recordingKey = `recordings/${meetingId}/recording.${recordingExtension(recording.contentType)}`;
     await env.ARTIFACTS.put(recordingKey, recording.data, { httpMetadata: { contentType: recording.contentType } });
@@ -42,13 +42,11 @@ export async function fetchAndStoreTranscript(
       deleted_at: null
     });
 
-    const transcriber = createOpenRouterTranscriptionProvider({
-      baseUrl: openRouterBaseUrl(settings.ai.baseUrl),
-      apiKey: env.AI_API_KEY,
-      model: settings.recap.transcriptionModel,
-      language: settings.recap.language || undefined
-    });
-    const transcription = await runStep("transcribe recording", () => transcriber.transcribe(recording.data, recording.contentType));
+    const attendeeText = await storeAttendeeTranscriptSegments(env.DB, meetingId, attendeeBotId, attendeeTranscript);
+    const transcription =
+      attendeeText.length > 0
+        ? { source: "attendee", model: null, text: attendeeText, usage: null }
+        : await transcribeRecording(env, settings, recording.data, recording.contentType, runStep);
     const plainText = transcription.text.trim();
     if (!plainText) {
       await updateTranscriptStatus(env.DB, meetingId, "unavailable", "NO_TRANSCRIPT_AVAILABLE");
@@ -56,7 +54,7 @@ export async function fetchAndStoreTranscript(
       return;
     }
 
-    const jsonBody = JSON.stringify({ source: "openrouter", model: settings.recap.transcriptionModel, text: plainText, usage: transcription.usage ?? null });
+    const jsonBody = JSON.stringify({ source: transcription.source, model: transcription.model, text: plainText, usage: transcription.usage ?? null });
     const jsonKey = `transcripts/${meetingId}/transcript.json`;
     const textKey = `transcripts/${meetingId}/transcript.txt`;
     await env.ARTIFACTS.put(textKey, plainText, { httpMetadata: { contentType: "text/plain" } });
@@ -64,7 +62,7 @@ export async function fetchAndStoreTranscript(
     await createArtifact(env.DB, { meeting_id: meetingId, type: "transcript_text", r2_key: textKey, content_type: "text/plain", size_bytes: byteLength(plainText), deleted_at: null });
     await createArtifact(env.DB, { meeting_id: meetingId, type: "transcript_json", r2_key: jsonKey, content_type: "application/json", size_bytes: byteLength(jsonBody), deleted_at: null });
     await updateTranscriptStatus(env.DB, meetingId, "complete", "TRANSCRIPT_AVAILABLE");
-    await createAuditLog(env.DB, { eventType: "transcript.fetched", resourceType: "meeting", resourceId: meetingId, metadata: { source: "openrouter", model: settings.recap.transcriptionModel } });
+    await createAuditLog(env.DB, { eventType: "transcript.fetched", resourceType: "meeting", resourceId: meetingId, metadata: { source: transcription.source, model: transcription.model } });
     await env.SUMMARY_QUEUE.send({ type: "summarize", meetingId });
     if (settings.attendee.deleteAttendeeDataAfterTranscriptFetch) await client.deleteBotData(attendeeBotId);
   } catch (error) {
@@ -79,10 +77,56 @@ export async function fetchAndStoreTranscript(
   }
 }
 
+async function transcribeRecording(
+  env: WorkflowEnv,
+  settings: Awaited<ReturnType<typeof getSettings>>,
+  recordingData: ArrayBuffer,
+  contentType: string,
+  runStep: <T>(name: string, callback: () => Promise<T>) => Promise<T>
+) {
+  if (!env.AI_API_KEY) throw new AppError("AI_API_KEY_MISSING", "AI_API_KEY secret is not configured", 500);
+  const transcriber = createOpenRouterTranscriptionProvider({
+    baseUrl: openRouterBaseUrl(settings.ai.baseUrl),
+    apiKey: env.AI_API_KEY,
+    model: settings.recap.transcriptionModel,
+    language: settings.recap.language || undefined
+  });
+  const transcription = await runStep("transcribe recording", () => transcriber.transcribe(recordingData, contentType));
+  return { source: "openrouter", model: settings.recap.transcriptionModel, text: transcription.text, usage: transcription.usage ?? null };
+}
+
+async function storeAttendeeTranscriptSegments(db: D1Database, meetingId: string, attendeeBotId: string, segments: AttendeeTranscriptSegment[]): Promise<string> {
+  const lines: string[] = [];
+  for (const segment of segments) {
+    const text = transcriptText(segment).trim();
+    if (!text) continue;
+    await insertTranscriptSegment(db, {
+      meeting_id: meetingId,
+      attendee_bot_id: attendeeBotId,
+      speaker_name: segment.speaker_name ?? null,
+      speaker_uuid: segment.speaker_uuid ?? null,
+      speaker_user_uuid: segment.speaker_user_uuid ?? null,
+      timestamp_ms: segment.timestamp_ms ?? null,
+      duration_ms: segment.duration_ms ?? null,
+      text,
+      source: "attendee"
+    });
+    lines.push(segment.speaker_name ? `${segment.speaker_name}: ${text}` : text);
+  }
+  return lines.join("\n");
+}
+
+function transcriptText(segment: AttendeeTranscriptSegment): string {
+  const transcription = segment.transcription;
+  if (typeof transcription === "string") return transcription;
+  return typeof transcription.transcript === "string" ? transcription.transcript : "";
+}
+
 function recordingExtension(contentType: string): string {
   const type = contentType.split(";")[0]?.trim().toLowerCase();
   if (type === "audio/mpeg") return "mp3";
   if (type === "audio/mp4" || type === "audio/x-m4a") return "mp4";
+  if (type === "video/mp4") return "mp4";
   if (type === "audio/wav" || type === "audio/wave") return "wav";
   if (type === "audio/webm") return "webm";
   if (type === "audio/ogg") return "ogg";
