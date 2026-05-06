@@ -26,6 +26,8 @@ async function resolveSummaryMeetingType(input: SummaryInput, provider: SummaryP
 function combineSummaries(summaries: MeetingSummary[], meetingType: MeetingRecapType): MeetingSummary {
   return {
     meetingType,
+    meetingNotes: summaries.flatMap((summary) => summary.meetingNotes),
+    followUpTasks: summaries.flatMap((summary) => summary.followUpTasks),
     summary: normalizeSummaryLines(meetingType, summaries.flatMap((summary) => summary.summary)),
     decisions: summaries.flatMap((summary) => summary.decisions),
     actionItems: summaries.flatMap((summary) => summary.actionItems),

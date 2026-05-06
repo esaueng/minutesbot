@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarizeArtifacts } from "./MeetingDetail";
+import { normalizeSummaryForDisplay, summarizeArtifacts } from "./MeetingDetail";
 
 describe("meeting artifact summaries", () => {
   it("groups repeated artifact rows and keeps the latest timestamp", () => {
@@ -52,5 +52,50 @@ describe("meeting artifact summaries", () => {
         deleted: false
       }
     ]);
+  });
+});
+
+describe("meeting detail recap display", () => {
+  it("normalizes teams-style summary JSON for display", () => {
+    const summary = normalizeSummaryForDisplay(
+      JSON.stringify({
+        meetingType: "weekly_spqrc",
+        meetingNotes: [
+          {
+            heading: "Safety Updates:",
+            overview: "Safety was reviewed.",
+            items: [{ title: "Incident Review:", detail: "Jenny reviewed safety incidents and corrective actions." }]
+          }
+        ],
+        followUpTasks: [{ title: "Close Corrective Actions:", description: "Close open corrective actions.", owners: ["Jenny"], dueDate: "TBD" }],
+        summary: [],
+        decisions: [],
+        actionItems: [],
+        openQuestions: [],
+        risks: [],
+        followUps: []
+      })
+    );
+
+    expect(summary?.meetingTypeLabel).toBe("Weekly SPQRC");
+    expect(summary?.meetingNotes[0].items[0].title).toBe("Incident Review:");
+    expect(summary?.followUpTasks[0].owners).toEqual(["Jenny"]);
+  });
+
+  it("normalizes legacy summary JSON without teams-style fields", () => {
+    const summary = normalizeSummaryForDisplay(
+      JSON.stringify({
+        summary: ["Discussed launch."],
+        decisions: [],
+        actionItems: [{ owner: "Alex", task: "Ship release notes.", dueDate: "TBD" }],
+        openQuestions: [],
+        risks: [],
+        followUps: []
+      })
+    );
+
+    expect(summary?.meetingTypeLabel).toBe("General");
+    expect(summary?.legacySections[0]).toEqual({ title: "Summary", items: ["Discussed launch."] });
+    expect(summary?.legacySections[1]).toEqual({ title: "Action items", items: ["Alex - Ship release notes. - TBD"] });
   });
 });

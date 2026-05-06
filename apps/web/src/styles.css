@@ -368,6 +368,40 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   font-size: 13px;
 }
 
+.teamsPreview,
+.teamsRecap {
+  display: grid;
+  gap: 12px;
+}
+
+.teamsPreview h4,
+.teamsRecap h3,
+.teamsRecap h4 {
+  margin: 0;
+}
+
+.teamsPreviewBlock {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid #253247;
+  border-radius: 8px;
+  background: #0b1220;
+}
+
+.teamsPreviewBlock p {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+.aiDisclaimer {
+  margin: 0;
+  color: #99f6e4;
+  font-size: 13px;
+  font-weight: 650;
+}
+
 .promptPreview {
   min-height: 210px;
   max-height: 360px;

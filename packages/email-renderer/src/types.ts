@@ -1,7 +1,8 @@
 import type { MeetingRecapType, MeetingSummary } from "@minutesbot/summary-engine";
 import type { RecapSectionKey } from "@minutesbot/shared";
 
-export type SummaryEmailSummary = Omit<MeetingSummary, "meetingType"> & {
+export type SummaryEmailSummary = Partial<Pick<MeetingSummary, "meetingNotes" | "followUpTasks">> &
+  Omit<MeetingSummary, "meetingType" | "meetingNotes" | "followUpTasks"> & {
   meetingType?: MeetingRecapType;
 };
 

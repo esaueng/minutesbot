@@ -16,6 +16,32 @@ export type SummaryInput = {
 export const meetingSummarySchema = z
   .object({
     meetingType: meetingRecapTypeSchema,
+    meetingNotes: z.array(
+      z
+        .object({
+          heading: z.string(),
+          overview: z.string(),
+          items: z.array(
+            z
+              .object({
+                title: z.string(),
+                detail: z.string()
+              })
+              .strict()
+          )
+        })
+        .strict()
+    ),
+    followUpTasks: z.array(
+      z
+        .object({
+          title: z.string(),
+          description: z.string(),
+          owners: z.array(z.string()),
+          dueDate: z.string()
+        })
+        .strict()
+    ),
     summary: z.array(z.string()),
     decisions: z.array(z.string()),
     actionItems: z.array(
