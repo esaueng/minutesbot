@@ -1,5 +1,5 @@
 console.log(`# minutesbot Cloudflare Worker
-APP_BASE_URL=https://admin.wgs.bot
+APP_BASE_URL=https://minutesbot-admin.wgsglobal.app
 API_BASE_URL=https://minutesbot-api.wgsglobal.app
 ATTENDEE_WEBHOOK_BASE_URL=https://minutesbot-webhook.wgsglobal.app
 ATTENDEE_API_BASE_URL=https://app.attendee.dev
