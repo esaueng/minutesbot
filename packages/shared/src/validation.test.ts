@@ -44,7 +44,7 @@ describe("settings validation", () => {
   it("includes default recap settings with configurable transcription and ordered sections", () => {
     const settings = parseSettings(defaultSettings);
 
-    expect(settings.recap.transcriptionModel).toBe("openai/whisper-large-v3");
+    expect(settings.recap.transcriptionModel).toBe("openai/whisper-large-v3-turbo");
     expect(settings.recap.language).toBe("");
     expect(settings.recap.subjectPrefix).toBe("Meeting recap");
     expect(settings.recap.sections.map((section) => section.key)).toEqual([

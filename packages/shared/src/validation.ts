@@ -90,7 +90,7 @@ export const appSettingsSchema = z.object({
     })
     .optional()
     .default({
-      transcriptionModel: "openai/whisper-large-v3",
+      transcriptionModel: "openai/whisper-large-v3-turbo",
       language: "",
       prompt: defaultRecapPrompt,
       subjectPrefix: "Meeting recap",
@@ -140,7 +140,7 @@ export const defaultSettings: AppSettings = {
     attendeeDeleteDataAfterDays: 0
   },
   recap: {
-    transcriptionModel: "openai/whisper-large-v3",
+    transcriptionModel: "openai/whisper-large-v3-turbo",
     language: "",
     prompt: defaultRecapPrompt,
     subjectPrefix: "Meeting recap",
