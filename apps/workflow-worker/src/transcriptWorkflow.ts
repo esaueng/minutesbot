@@ -30,23 +30,9 @@ export async function fetchAndStoreTranscript(
   const client = new AttendeeClient({ baseUrl: resolveAttendeeBaseUrl(settings.attendee.baseUrl, env.ATTENDEE_API_BASE_URL), apiKey: env.ATTENDEE_API_KEY });
   try {
     const attendeeTranscript = await runStep("fetch Attendee transcript", () => client.getBotTranscript(attendeeBotId));
-    const recording = await runStep("fetch recording", () => client.getBotRecording(attendeeBotId));
-    const recordingKey = `recordings/${meetingId}/recording.${recordingExtension(recording.contentType)}`;
-    await env.ARTIFACTS.put(recordingKey, recording.data, { httpMetadata: { contentType: recording.contentType } });
-    await createArtifact(env.DB, {
-      meeting_id: meetingId,
-      type: "recording",
-      r2_key: recordingKey,
-      content_type: recording.contentType,
-      size_bytes: recording.sizeBytes ?? recording.data.byteLength,
-      deleted_at: null
-    });
-
     const attendeeText = await storeAttendeeTranscriptSegments(env.DB, meetingId, attendeeBotId, attendeeTranscript);
-    const transcription =
-      attendeeText.length > 0
-        ? { source: "attendee", model: null, text: attendeeText, usage: null }
-        : await transcribeRecording(env, settings, recording.data, recording.contentType, runStep);
+    const recording = await fetchAndStoreRecording(env, meetingId, client, attendeeBotId, attendeeText.length > 0, runStep);
+    const transcription = attendeeText.length > 0 ? { source: "attendee", model: null, text: attendeeText, usage: null } : await transcribeStoredRecording(env, settings, recording, runStep);
     const plainText = transcription.text.trim();
     if (!plainText) {
       await updateTranscriptStatus(env.DB, meetingId, "unavailable", "NO_TRANSCRIPT_AVAILABLE");
@@ -75,6 +61,54 @@ export async function fetchAndStoreTranscript(
     });
     throw error;
   }
+}
+
+async function fetchAndStoreRecording(
+  env: WorkflowEnv,
+  meetingId: string,
+  client: AttendeeClient,
+  attendeeBotId: string,
+  optional: boolean,
+  runStep: <T>(name: string, callback: () => Promise<T>) => Promise<T>
+) {
+  try {
+    const recording = await runStep("fetch recording", () => client.getBotRecording(attendeeBotId));
+    const recordingKey = `recordings/${meetingId}/recording.${recordingExtension(recording.contentType)}`;
+    await env.ARTIFACTS.put(recordingKey, recording.data, { httpMetadata: { contentType: recording.contentType } });
+    await createArtifact(env.DB, {
+      meeting_id: meetingId,
+      type: "recording",
+      r2_key: recordingKey,
+      content_type: recording.contentType,
+      size_bytes: recording.sizeBytes ?? recording.data.byteLength,
+      deleted_at: null
+    });
+    return recording;
+  } catch (error) {
+    if (!optional) throw error;
+    await createAuditLog(env.DB, {
+      eventType: "recording.unavailable",
+      resourceType: "meeting",
+      resourceId: meetingId,
+      metadata: { reason: error instanceof Error ? error.message : String(error) }
+    });
+    return null;
+  }
+}
+
+function requireRecording(recording: Awaited<ReturnType<typeof fetchAndStoreRecording>>) {
+  if (!recording) throw new AppError("ATTENDEE_RECORDING_UNAVAILABLE", "Attendee recording media is unavailable", 503);
+  return recording;
+}
+
+async function transcribeStoredRecording(
+  env: WorkflowEnv,
+  settings: Awaited<ReturnType<typeof getSettings>>,
+  recording: Awaited<ReturnType<typeof fetchAndStoreRecording>>,
+  runStep: <T>(name: string, callback: () => Promise<T>) => Promise<T>
+) {
+  const availableRecording = requireRecording(recording);
+  return transcribeRecording(env, settings, availableRecording.data, availableRecording.contentType, runStep);
 }
 
 async function transcribeRecording(

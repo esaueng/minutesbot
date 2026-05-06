@@ -21,6 +21,17 @@ export function MeetingDetail({ id }: { id: string }) {
         <p>{formatDate(String(meeting.start_time ?? ""))} · <StatusBadge value={String(meeting.status ?? "")} /></p>
       </header>
       <section>
+        <h2>Controls</h2>
+        <div className="actions">
+          <Action label="Retry bot" run={() => apiPost(`/api/meetings/${id}/retry-bot`)} done={load} />
+          <Action label="Fetch transcript" run={() => apiPost(`/api/meetings/${id}/fetch-transcript`)} done={load} />
+          <Action label="Retry summary" run={() => apiPost(`/api/meetings/${id}/retry-summary`)} done={load} />
+          <Action label="Delete artifacts" run={() => apiDelete(`/api/meetings/${id}/artifacts`)} done={load} />
+          <Action label="Delete Attendee data" run={() => apiPost(`/api/meetings/${id}/delete-attendee-data`)} done={load} />
+        </div>
+        {message && <p>{message}</p>}
+      </section>
+      <section>
         <h2>Meeting metadata</h2>
         <div className="metricGrid">
           <Metric label="Organizer" value={String(meeting.organizer_email ?? "")} />
@@ -41,17 +52,6 @@ export function MeetingDetail({ id }: { id: string }) {
       <TableSection title="Artifacts" rows={(data.artifacts as Array<Record<string, unknown>>) ?? []} />
       <TableSection title="Webhook events" rows={(data.webhookEvents as Array<Record<string, unknown>>) ?? []} />
       <TableSection title="Email deliveries" rows={(data.emailDeliveries as Array<Record<string, unknown>>) ?? []} />
-      <section>
-        <h2>Controls</h2>
-        <div className="actions">
-          <Action label="Retry bot" run={() => apiPost(`/api/meetings/${id}/retry-bot`)} done={load} />
-          <Action label="Fetch transcript" run={() => apiPost(`/api/meetings/${id}/fetch-transcript`)} done={load} />
-          <Action label="Retry summary" run={() => apiPost(`/api/meetings/${id}/retry-summary`)} done={load} />
-          <Action label="Delete artifacts" run={() => apiDelete(`/api/meetings/${id}/artifacts`)} done={load} />
-          <Action label="Delete Attendee data" run={() => apiPost(`/api/meetings/${id}/delete-attendee-data`)} done={load} />
-        </div>
-        {message && <p>{message}</p>}
-      </section>
     </div>
   );
 }

@@ -99,6 +99,34 @@ describe("transcript workflow", () => {
     expect(summaryQueue.send).toHaveBeenCalledWith({ type: "summarize", meetingId: "mtg_1" });
   });
 
+  it("completes with Attendee transcript when recording media is unavailable", async () => {
+    const db = new FakeD1();
+    const r2Put = vi.fn(async () => undefined);
+    const summaryQueue = { send: vi.fn() };
+    getBotRecording.mockRejectedValue(new Error("Recording is not available yet"));
+    getBotTranscript.mockResolvedValue([{ speaker_name: "Alex", transcription: "Hello from Attendee." }]);
+
+    await fetchAndStoreTranscript(
+      {
+        DB: db as unknown as D1Database,
+        ARTIFACTS: { put: r2Put } as unknown as R2Bucket,
+        INVITE_QUEUE: { send: vi.fn() },
+        SUMMARY_QUEUE: summaryQueue,
+        EMAIL_QUEUE: { send: vi.fn() },
+        ATTENDEE_API_BASE_URL: "https://attendee.wgsglobal.app",
+        API_BASE_URL: "https://minutesbot.wgsglobal.app",
+        ATTENDEE_API_KEY: "attendee-key",
+        AI_API_KEY: "openrouter-key"
+      },
+      "mtg_1"
+    );
+
+    expect(transcribe).not.toHaveBeenCalled();
+    expect(r2Put).toHaveBeenCalledWith("transcripts/mtg_1/transcript.txt", "Alex: Hello from Attendee.", expect.any(Object));
+    expect(db.artifacts.map((values) => values[2])).toEqual(["transcript_text", "transcript_json"]);
+    expect(summaryQueue.send).toHaveBeenCalledWith({ type: "summarize", meetingId: "mtg_1" });
+  });
+
   it("falls back to OpenRouter transcription when Attendee has no transcript", async () => {
     const db = new FakeD1();
     const r2Put = vi.fn(async () => undefined);

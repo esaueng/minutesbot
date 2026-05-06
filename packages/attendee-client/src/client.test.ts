@@ -51,6 +51,16 @@ describe("AttendeeClient", () => {
     expect(new Uint8Array(recording.data)).toEqual(new Uint8Array([1, 2, 3]));
   });
 
+  it("rejects JSON recording responses as unavailable media", async () => {
+    const fetcher = vi.fn(async () => Response.json({ detail: "Recording is not available yet" }));
+    const client = new AttendeeClient({ baseUrl: "https://attendee.company.com", apiKey: "secret", fetcher });
+
+    await expect(client.getBotRecording("bot_1")).rejects.toMatchObject({
+      code: "ATTENDEE_RECORDING_UNAVAILABLE",
+      retryable: true
+    });
+  });
+
   it("calls default global fetch with a valid host receiver", async () => {
     vi.stubGlobal(
       "fetch",

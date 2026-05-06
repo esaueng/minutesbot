@@ -45,9 +45,13 @@ export class AttendeeClient {
 
   async getBotRecording(botId: string): Promise<AttendeeRecording> {
     const response = await this.rawRequest(`/api/v1/bots/${encodeURIComponent(botId)}/recording`);
+    const contentType = response.headers.get("content-type") ?? "application/octet-stream";
+    if (!isRecordingContentType(contentType)) {
+      throw new AttendeeClientError(`Attendee recording media is unavailable; received ${contentType}`, response.status, true, "ATTENDEE_RECORDING_UNAVAILABLE");
+    }
     return {
       data: await response.arrayBuffer(),
-      contentType: response.headers.get("content-type") ?? "application/octet-stream",
+      contentType,
       sizeBytes: numberHeader(response.headers.get("content-length"))
     };
   }
@@ -101,6 +105,11 @@ function numberHeader(value: string | null): number | undefined {
   if (!value) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function isRecordingContentType(contentType: string): boolean {
+  const type = contentType.split(";")[0]?.trim().toLowerCase();
+  return Boolean(type && (type.startsWith("audio/") || type.startsWith("video/") || type === "application/octet-stream"));
 }
 
 export function normalizeBaseUrl(baseUrl: string): string {
