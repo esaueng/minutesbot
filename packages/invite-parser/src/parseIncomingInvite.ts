@@ -14,7 +14,7 @@ export function parseIncomingInvite(rawEmail: string): ParsedMeetingInvite {
     throw new AppError("INVITE_PARSE_ERROR", "Inbound email is missing sender or recipient", 400);
   }
   if (!calendarText) {
-    throw new AppError("INVITE_PARSE_ERROR", "Inbound email does not include a calendar payload", 400);
+    return parseLinkOnlyInvite({ headers, body, rawRecipient, rawSender });
   }
 
   const calendar = parseIcsCalendar(calendarText);
@@ -28,6 +28,28 @@ export function parseIncomingInvite(rawEmail: string): ParsedMeetingInvite {
     teamsJoinUrl,
     rawRecipient: rawRecipient.toLowerCase(),
     rawSender: rawSender.toLowerCase()
+  };
+}
+
+function parseLinkOnlyInvite(input: { headers: Map<string, string>; body: string; rawRecipient: string; rawSender: string }): ParsedMeetingInvite {
+  const teamsJoinUrl = extractTeamsJoinUrl(input.body);
+  if (!teamsJoinUrl) {
+    throw new AppError("INVITE_PARSE_ERROR", "Inbound email does not include a calendar payload", 400);
+  }
+
+  const start = new Date();
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  return {
+    kind: "request",
+    calendarUid: `teams-link-${stableHash(teamsJoinUrl)}`,
+    subject: decodeMimeWords(input.headers.get("subject") ?? "").trim() || "Teams meeting",
+    organizer: { email: input.rawSender.toLowerCase() },
+    attendees: [],
+    startTime: start.toISOString(),
+    endTime: end.toISOString(),
+    teamsJoinUrl,
+    rawRecipient: input.rawRecipient.toLowerCase(),
+    rawSender: input.rawSender.toLowerCase()
   };
 }
 
@@ -47,6 +69,21 @@ function firstAddress(value: string): string {
   const angle = value.match(/<([^>]+)>/);
   const candidate = angle?.[1] ?? value.split(",")[0] ?? "";
   return candidate.trim().replace(/^mailto:/i, "");
+}
+
+function stableHash(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function decodeMimeWords(value: string): string {
+  return value.replace(/=\?utf-8\?q\?([^?]+)\?=/gi, (_match, encoded: string) =>
+    encoded.replace(/_/g, " ").replace(/=([0-9a-f]{2})/gi, (_hexMatch, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
+  );
 }
 
 function extractCalendarPart(rawEmail: string): string | null {

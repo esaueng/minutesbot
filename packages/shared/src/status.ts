@@ -31,6 +31,7 @@ export type SummaryStatus = "not_started" | "queued" | "generating" | "ready" | 
 export const auditEventTypes = [
   "settings.changed",
   "invite.received",
+  "invite.ignored",
   "invite.rejected",
   "meeting.scheduled",
   "meeting.cancelled",

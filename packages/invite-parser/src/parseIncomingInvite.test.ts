@@ -44,4 +44,33 @@ describe("invite parser", () => {
       "teams.microsoft.com/l/meetup-join"
     );
   });
+
+  it("parses plain forwarded Teams links as immediate meetings", () => {
+    const raw = `From: Peter <p.gustafson@wgsglobalservices.com>
+To: notetaker@wgs.bot
+Subject: Join Teams meeting in progress
+
+Please join https://teams.microsoft.com/l/meetup-join/19%3alink%40thread.v2/0?context=%7b%7d`;
+
+    const first = parseIncomingInvite(raw);
+    const second = parseIncomingInvite(raw);
+
+    expect(first.kind).toBe("request");
+    expect(first.subject).toBe("Join Teams meeting in progress");
+    expect(first.organizer.email).toBe("p.gustafson@wgsglobalservices.com");
+    expect(first.attendees).toEqual([]);
+    expect(first.teamsJoinUrl).toContain("teams.microsoft.com/l/meetup-join");
+    expect(first.calendarUid).toBe(second.calendarUid);
+    expect(new Date(first.endTime).getTime() - new Date(first.startTime).getTime()).toBe(60 * 60 * 1000);
+  });
+
+  it("still rejects plain emails without Teams links", () => {
+    expect(() =>
+      parseIncomingInvite(`From: Peter <p.gustafson@wgsglobalservices.com>
+To: notetaker@wgs.bot
+Subject: TEST
+
+hello`)
+    ).toThrow("calendar payload");
+  });
 });

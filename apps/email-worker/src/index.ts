@@ -127,7 +127,13 @@ async function rejectInvite(env: Env, message: Pick<EmailMessage, "from" | "setR
 }
 
 async function ignoreInvite(env: Env, message: Pick<EmailMessage, "from">, status: MeetingStatus, reason: string): Promise<void> {
-  await recordRejectedInvite(env, message.from, status, reason);
+  await createAuditLog(env.DB, {
+    actorEmail: message.from,
+    eventType: "invite.ignored",
+    resourceType: "invite",
+    resourceId: createId("ign"),
+    metadata: { status: "IGNORED_NON_CALENDAR_EMAIL", originalStatus: status, reason }
+  });
 }
 
 async function recordRejectedInvite(env: Env, actorEmail: string, status: MeetingStatus, reason: string): Promise<void> {

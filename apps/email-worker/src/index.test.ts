@@ -2,15 +2,25 @@ import { describe, expect, it, vi } from "vitest";
 import { handleInvite } from "./index";
 
 class FakeD1 {
-  prepare() {
+  meetings: unknown[][] = [];
+  attendees: unknown[][] = [];
+  auditEvents: unknown[][] = [];
+
+  prepare(sql: string) {
+    const db = this;
     return {
+      values: [] as unknown[],
       bind() {
+        this.values = Array.from(arguments);
         return this;
       },
       async first() {
         return null;
       },
       async run() {
+        if (sql.includes("INSERT OR REPLACE INTO meetings")) db.meetings.push(this.values);
+        if (sql.includes("INSERT INTO attendees")) db.attendees.push(this.values);
+        if (sql.includes("INSERT INTO audit_logs")) db.auditEvents.push(this.values);
         return { success: true };
       },
       async all() {
@@ -24,8 +34,9 @@ describe("email worker invite handling", () => {
   it("accepts non-calendar test emails without an SMTP rejection", async () => {
     const setReject = vi.fn();
     const queueInvite = vi.fn(async () => undefined);
+    const db = new FakeD1();
     const env = {
-      DB: new FakeD1() as unknown as D1Database,
+      DB: db as unknown as D1Database,
       ARTIFACTS: { put: vi.fn(async () => undefined) } as unknown as R2Bucket,
       INVITE_QUEUE: { send: queueInvite }
     };
@@ -42,6 +53,35 @@ hello`
 
     expect(setReject).not.toHaveBeenCalled();
     expect(queueInvite).not.toHaveBeenCalled();
+    expect(db.auditEvents.some((values) => values[2] === "invite.ignored")).toBe(true);
+  });
+
+  it("schedules link-only Teams emails immediately with the sender as recipient", async () => {
+    const setReject = vi.fn();
+    const queueInvite = vi.fn(async () => undefined);
+    const db = new FakeD1();
+    const env = {
+      DB: db as unknown as D1Database,
+      ARTIFACTS: { put: vi.fn(async () => undefined) } as unknown as R2Bucket,
+      INVITE_QUEUE: { send: queueInvite }
+    };
+
+    await handleInvite(
+      { from: "p.gustafson@wgs.bot", to: "notetaker@wgs.bot", setReject },
+      env,
+      `From: Peter <p.gustafson@wgs.bot>
+To: notetaker@wgs.bot
+Subject: Join Teams meeting in progress
+
+https://teams.microsoft.com/l/meetup-join/19%3alink%40thread.v2/0?context=%7b%7d`
+    );
+
+    expect(setReject).not.toHaveBeenCalled();
+    expect(queueInvite).toHaveBeenCalledWith(expect.objectContaining({ type: "create_bot", meetingId: expect.stringMatching(/^mtg_/) }));
+    expect(db.meetings[0][2]).toBe("Join Teams meeting in progress");
+    expect(db.meetings[0][3]).toBe("p.gustafson@wgs.bot");
+    expect(db.attendees[0][2]).toBe("p.gustafson@wgs.bot");
+    expect(db.attendees[0][6]).toBe(1);
   });
 
   it("rejects wrong recorder recipient", async () => {
