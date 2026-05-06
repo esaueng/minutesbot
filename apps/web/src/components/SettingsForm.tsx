@@ -34,8 +34,6 @@ export function SettingsForm({
       />
       <Field label="Recorder email" value={value.recorderEmail} onChange={(v) => update("recorderEmail", v)} />
       <Field label="Attendee base URL" value={value.attendee.baseUrl} onChange={(v) => update("attendee.baseUrl", v)} />
-      <ReadOnly label="Attendee API key" value={value.attendee.apiKeyConfigured ? "Configured" : "Missing"} />
-      <ReadOnly label="Attendee webhook secret" value={value.attendee.webhookSecretConfigured ? "Configured" : "Missing"} />
       <Field label="Teams meeting display name" value={value.attendee.botName} onChange={(v) => update("attendee.botName", v)} />
       <BotImageField value={value} onUpload={onBotImageUpload} />
       <NumberField label="Create bot minutes before start" value={value.attendee.createBotMinutesBeforeStart} onChange={(v) => update("attendee.createBotMinutesBeforeStart", v)} />
@@ -150,15 +148,6 @@ function Checkbox({ label, checked, onChange }: { label: string; checked: boolea
     <label className="check">
       <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
       <span>{label}</span>
-    </label>
-  );
-}
-
-function ReadOnly({ label, value }: { label: string; value: string }) {
-  return (
-    <label>
-      <span>{label}</span>
-      <input value={value} readOnly />
     </label>
   );
 }
