@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import type { AppSettings } from "@minutesbot/shared";
+import { TestActionButton } from "./TestActionButton";
 
 export function SettingsForm({
   value,
@@ -20,37 +22,121 @@ export function SettingsForm({
     onChange(clone);
   };
 
+  const allowedDomainsText = value.allowedDomains.join("\n");
+
   return (
-    <form className="formGrid">
-      <Field label="Company name" value={value.companyName} onChange={(v) => update("companyName", v)} />
-      <Field label="Primary domain" value={value.primaryDomain} onChange={(v) => update("primaryDomain", v)} />
-      <TimeZoneField value={value.timeZone} options={timeZoneOptions} onChange={(v) => update("timeZone", v)} />
-      <TextAreaField
-        className="allowedDomainsField"
-        help="Enter one domain per line, or separate domains with commas."
-        label="Allowed domains"
-        value={value.allowedDomains.join("\n")}
-        onChange={(v) => update("allowedDomains", parseAllowedDomains(v))}
-      />
-      <Field label="Recorder email" value={value.recorderEmail} onChange={(v) => update("recorderEmail", v)} />
-      <Field label="Attendee base URL" value={value.attendee.baseUrl} onChange={(v) => update("attendee.baseUrl", v)} />
-      <Field label="Teams meeting display name" value={value.attendee.botName} onChange={(v) => update("attendee.botName", v)} />
-      <BotImageField value={value} onUpload={onBotImageUpload} />
-      <NumberField label="Create bot minutes before start" value={value.attendee.createBotMinutesBeforeStart} onChange={(v) => update("attendee.createBotMinutesBeforeStart", v)} />
-      <NumberField label="Max waiting room minutes" value={value.attendee.maxWaitingRoomMinutes} onChange={(v) => update("attendee.maxWaitingRoomMinutes", v)} />
-      <Checkbox label="Delete Attendee data after transcript fetch" checked={value.attendee.deleteAttendeeDataAfterTranscriptFetch} onChange={(v) => update("attendee.deleteAttendeeDataAfterTranscriptFetch", v)} />
-      <Select label="AI provider" value={value.ai.provider} options={["openai-compatible", "workers-ai"]} onChange={(v) => update("ai.provider", v)} />
-      <Field label="AI base URL" value={value.ai.baseUrl ?? ""} onChange={(v) => update("ai.baseUrl", v)} />
-      <Field label="AI model" value={value.ai.model} onChange={(v) => update("ai.model", v)} />
-      <Select label="Email provider" value={value.email.provider} options={["mock", "cloudflare-email-service", "smtp"]} onChange={(v) => update("email.provider", v)} />
-      <Field label="Sender email" value={value.email.senderEmail} onChange={(v) => update("email.senderEmail", v)} />
-      <Checkbox label="Allow subdomains" checked={value.policy.allowSubdomains} onChange={(v) => update("policy.allowSubdomains", v)} />
-      <Checkbox label="Reject external organizers" checked={value.policy.rejectExternalOrganizers} onChange={(v) => update("policy.rejectExternalOrganizers", v)} />
-      <Checkbox label="Require eligible recipient" checked={value.policy.requireAtLeastOneEligibleRecipient} onChange={(v) => update("policy.requireAtLeastOneEligibleRecipient", v)} />
-      <NumberField label="Raw invite retention days" value={value.retention.rawInviteDays} onChange={(v) => update("retention.rawInviteDays", v)} />
-      <NumberField label="Transcript retention days" value={value.retention.transcriptDays} onChange={(v) => update("retention.transcriptDays", v)} />
-      <NumberField label="Summary retention days" value={value.retention.summaryDays} onChange={(v) => update("retention.summaryDays", v)} />
-      <NumberField label="Audit log retention days" value={value.retention.auditLogDays} onChange={(v) => update("retention.auditLogDays", v)} />
+    <form className="setupForm">
+      <SettingsSection title="Organization" description="Basic tenant identity and allowed recipient domains.">
+        <div className="setupFieldGrid twoColumn">
+          <TextField label="Company name" value={value.companyName} width="wide" onChange={(v) => update("companyName", v)} />
+          <TextField label="Primary domain" value={value.primaryDomain} width="medium" onChange={(v) => update("primaryDomain", v)} />
+          <TimeZoneField value={value.timeZone} options={timeZoneOptions} onChange={(v) => update("timeZone", v)} />
+        </div>
+        <AllowedDomainsField value={allowedDomainsText} domains={value.allowedDomains} onChange={(v) => update("allowedDomains", parseAllowedDomains(v))} />
+      </SettingsSection>
+
+      <SettingsSection title="Meeting Bot" description="Controls how the notetaker appears and joins meetings.">
+        <div className="setupFieldGrid twoColumn">
+          <TextField label="Notetaker email" value={value.recorderEmail} width="medium" onChange={(v) => update("recorderEmail", v)} />
+          <TextField label="Bot display name" value={value.attendee.botName} width="medium" onChange={(v) => update("attendee.botName", v)} />
+          <BotImageField value={value} onUpload={onBotImageUpload} />
+        </div>
+        <div className="compactSettingRows">
+          <NumberWithUnit label="Join meeting early" unit="minutes" value={value.attendee.createBotMinutesBeforeStart} onChange={(v) => update("attendee.createBotMinutesBeforeStart", v)} />
+          <NumberWithUnit label="Waiting room timeout" unit="minutes" value={value.attendee.maxWaitingRoomMinutes} onChange={(v) => update("attendee.maxWaitingRoomMinutes", v)} />
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="Attendee Integration"
+        description="Connects minutesbot to the external meeting-bot backend."
+        status={<StatusPill tone={configuredTone(value.attendee.apiKeyConfigured)}>{configuredLabel(value.attendee.apiKeyConfigured)}</StatusPill>}
+      >
+        <TextField label="Base URL" value={value.attendee.baseUrl} width="url" onChange={(v) => update("attendee.baseUrl", v)} />
+        <div className="secretRows">
+          <SecretStatusRow label="Attendee API key" configured={value.attendee.apiKeyConfigured} />
+          <SecretStatusRow label="Webhook secret" configured={value.attendee.webhookSecretConfigured} />
+        </div>
+        <ToggleRow
+          checked={value.attendee.deleteAttendeeDataAfterTranscriptFetch}
+          description="Remove Attendee-side data after minutesbot imports the transcript."
+          label="Delete Attendee data after transcript import"
+          onChange={(v) => update("attendee.deleteAttendeeDataAfterTranscriptFetch", v)}
+        />
+        <div className="inlineActions">
+          <TestActionButton path="/api/admin/test-attendee" label="Test Attendee connection" variant="secondary" />
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="AI Provider"
+        description="Controls transcript and recap generation provider settings."
+        status={<StatusPill tone={configuredTone(value.ai.apiKeyConfigured)}>{configuredLabel(value.ai.apiKeyConfigured)}</StatusPill>}
+      >
+        <div className="setupFieldGrid aiProviderGrid">
+          <SelectField label="Provider" value={value.ai.provider} options={["openai-compatible", "workers-ai"]} width="medium" onChange={(v) => update("ai.provider", v)} />
+          <TextField label="Model" value={value.ai.model} width="medium" onChange={(v) => update("ai.model", v)} />
+          <TextField label="Base URL" value={value.ai.baseUrl ?? ""} width="url" onChange={(v) => update("ai.baseUrl", v)} />
+        </div>
+        <div className="inlineActions">
+          <TestActionButton path="/api/admin/test-ai" label="Test AI connection" variant="secondary" />
+        </div>
+      </SettingsSection>
+
+      <SettingsSection title="Email Provider" description="Controls outbound recap delivery and test email actions.">
+        <div className="setupFieldGrid twoColumn">
+          <SelectField label="Provider" value={value.email.provider} options={["mock", "cloudflare-email-service", "smtp"]} width="medium" onChange={(v) => update("email.provider", v)} />
+          <TextField label="Sender email" value={value.email.senderEmail} width="medium" onChange={(v) => update("email.senderEmail", v)} />
+        </div>
+        <div className="inlineActions">
+          <TestActionButton path="/api/admin/test-email" label="Test outbound email" variant="secondary" />
+          <TestActionButton path="/api/admin/send-test-summary-email" label="Send test summary email" variant="secondary" />
+        </div>
+      </SettingsSection>
+
+      <SettingsSection title="Eligibility & Policy" description="Defines who can trigger notes and receive summaries.">
+        <div className="toggleList">
+          <ToggleRow
+            checked={value.policy.requireAtLeastOneEligibleRecipient}
+            description="Only process meetings with at least one recipient who matches policy."
+            label="Require eligible recipient"
+            onChange={(v) => update("policy.requireAtLeastOneEligibleRecipient", v)}
+          />
+          <ToggleRow
+            checked={value.policy.rejectExternalOrganizers}
+            description="Ignore meetings created by organizers outside allowed domains."
+            label="Block external organizers"
+            onChange={(v) => update("policy.rejectExternalOrganizers", v)}
+          />
+          <ToggleRow
+            checked={value.policy.allowSubdomains}
+            description="Allow addresses like user@team.wgs.bot."
+            label="Allow subdomains"
+            onChange={(v) => update("policy.allowSubdomains", v)}
+          />
+        </div>
+      </SettingsSection>
+
+      <SettingsSection title="Retention" description="How long different data types are stored.">
+        <div className="retentionTable" role="group" aria-label="Retention settings">
+          <div className="retentionHeader">
+            <span>Data type</span>
+            <span>Retain for</span>
+          </div>
+          <NumberWithUnit label="Raw invites" unit="days" value={value.retention.rawInviteDays} onChange={(v) => update("retention.rawInviteDays", v)} />
+          <NumberWithUnit label="Transcripts" unit="days" value={value.retention.transcriptDays} onChange={(v) => update("retention.transcriptDays", v)} />
+          <NumberWithUnit label="Summaries" unit="days" value={value.retention.summaryDays} onChange={(v) => update("retention.summaryDays", v)} />
+          <NumberWithUnit label="Audit logs" unit="days" value={value.retention.auditLogDays} onChange={(v) => update("retention.auditLogDays", v)} />
+        </div>
+      </SettingsSection>
+
+      <SettingsSection title="Diagnostics" description="Run secondary checks against the current saved configuration." secondary>
+        <div className="diagnosticActions">
+          <TestActionButton path="/api/admin/test-d1" label="Test D1" variant="tertiary" />
+          <TestActionButton path="/api/admin/test-r2" label="Test R2" variant="tertiary" />
+          <TestActionButton path="/api/admin/parse-sample-invite" label="Parse sample invite" variant="tertiary" />
+        </div>
+      </SettingsSection>
     </form>
   );
 }
@@ -68,9 +154,54 @@ export function getTimeZoneOptions(currentTimeZone: string): string[] {
   return Array.from(new Set(["UTC", currentTimeZone, ...options])).sort((a, b) => a.localeCompare(b));
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+export function configuredLabel(configured: boolean): "Configured" | "Missing" {
+  return configured ? "Configured" : "Missing";
+}
+
+function configuredTone(configured: boolean): "good" | "bad" {
+  return configured ? "good" : "bad";
+}
+
+function SettingsSection({
+  children,
+  description,
+  secondary = false,
+  status,
+  title
+}: {
+  children: ReactNode;
+  description: string;
+  secondary?: boolean;
+  status?: ReactNode;
+  title: string;
+}) {
   return (
-    <label>
+    <section className={secondary ? "setupPanel setupPanelSecondary" : "setupPanel"}>
+      <div className="setupPanelHeader">
+        <div>
+          <h2>{title}</h2>
+          <p>{description}</p>
+        </div>
+        {status}
+      </div>
+      <div className="setupPanelBody">{children}</div>
+    </section>
+  );
+}
+
+function TextField({
+  label,
+  value,
+  width = "medium",
+  onChange
+}: {
+  label: string;
+  value: string;
+  width?: "medium" | "wide" | "url";
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className={`setupField fieldWidth-${width}`}>
       <span>{label}</span>
       <input value={value} onChange={(event) => onChange(event.target.value)} />
     </label>
@@ -94,7 +225,7 @@ function TimeZoneField({
   }, []);
 
   return (
-    <label className="timeZoneField">
+    <label className="setupField timeZoneField fieldWidth-medium">
       <span>Time zone</span>
       <div className="timeZoneControl">
         <select value={value} onChange={(event) => onChange(event.target.value)}>
@@ -112,42 +243,60 @@ function TimeZoneField({
   );
 }
 
-function TextAreaField({
-  className,
-  help,
-  label,
+function AllowedDomainsField({
+  domains,
   value,
   onChange
 }: {
-  className?: string;
-  help?: string;
-  label: string;
+  domains: string[];
   value: string;
   onChange: (value: string) => void;
 }) {
   return (
-    <label className={className}>
+    <div className="allowedDomainsControl">
+      <label className="setupField fieldWidth-domains">
+        <span>Allowed domains</span>
+        <textarea rows={3} value={value} onChange={(event) => onChange(event.target.value)} />
+      </label>
+      <span className="fieldHelp">Enter one domain per line, or separate domains with commas.</span>
+      <div className="domainChips" aria-label="Parsed allowed domains">
+        {domains.length > 0 ? domains.map((domain) => <span key={domain}>{domain}</span>) : <span className="emptyChip">No domains parsed</span>}
+      </div>
+    </div>
+  );
+}
+
+function NumberWithUnit({ label, unit, value, onChange }: { label: string; unit: string; value: number; onChange: (value: number) => void }) {
+  return (
+    <label className="numberUnitRow">
       <span>{label}</span>
-      <textarea rows={4} value={value} onChange={(event) => onChange(event.target.value)} />
-      {help && <span className="fieldHelp">{help}</span>}
+      <span className="numberUnitControl">
+        <input type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+        <span>{unit}</span>
+      </span>
     </label>
   );
 }
 
-function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+function ToggleRow({
+  checked,
+  description,
+  label,
+  onChange
+}: {
+  checked: boolean;
+  description: string;
+  label: string;
+  onChange: (value: boolean) => void;
+}) {
   return (
-    <label>
-      <span>{label}</span>
-      <input type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} />
-    </label>
-  );
-}
-
-function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
-  return (
-    <label className="check">
+    <label className="toggleRow">
       <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      <span>{label}</span>
+      <span className="toggleSwitch" aria-hidden="true" />
+      <span className="toggleText">
+        <strong>{label}</strong>
+        <span>{description}</span>
+      </span>
     </label>
   );
 }
@@ -158,8 +307,8 @@ function BotImageField({ value, onUpload }: { value: AppSettings; onUpload?: (fi
   const botImage = value.attendee.botImage;
 
   return (
-    <label>
-      <span>Teams background image</span>
+    <label className="setupField fieldWidth-wide">
+      <span>Bot background image</span>
       <input
         accept="image/png,image/jpeg"
         disabled={!onUpload || uploading}
@@ -187,9 +336,21 @@ function BotImageField({ value, onUpload }: { value: AppSettings; onUpload?: (fi
   );
 }
 
-function Select({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
+function SelectField({
+  label,
+  value,
+  options,
+  width = "medium",
+  onChange
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  width?: "medium" | "wide";
+  onChange: (value: string) => void;
+}) {
   return (
-    <label>
+    <label className={`setupField fieldWidth-${width}`}>
       <span>{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => (
@@ -200,6 +361,23 @@ function Select({ label, value, options, onChange }: { label: string; value: str
       </select>
     </label>
   );
+}
+
+function SecretStatusRow({ configured, label }: { configured: boolean; label: string }) {
+  return (
+    <div className="secretStatusRow">
+      <div>
+        <span>{label}</span>
+        <small>Stored securely. Leave unchanged unless rotating credentials.</small>
+      </div>
+      <code aria-label={configuredLabel(configured)}>{configured ? "••••••••••••••••" : "Not configured"}</code>
+      <StatusPill tone={configuredTone(configured)}>{configuredLabel(configured)}</StatusPill>
+    </div>
+  );
+}
+
+function StatusPill({ children, tone }: { children: ReactNode; tone: "good" | "bad" | "neutral" | "warning" }) {
+  return <span className={`setupStatusPill ${tone}`}>{children}</span>;
 }
 
 function formatCurrentTime(date: Date, timeZone: string): string {

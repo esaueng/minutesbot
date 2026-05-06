@@ -1,17 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AppSettings } from "@minutesbot/shared";
 import { SettingsForm } from "../components/SettingsForm";
-import { TestActionButton } from "../components/TestActionButton";
 import { ApiError, getSettings, saveSettings, uploadBotImage } from "../lib/api";
 
 export function Setup() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [savedSettings, setSavedSettings] = useState<AppSettings | null>(null);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [authNotConfigured, setAuthNotConfigured] = useState(false);
   useEffect(() => {
     getSettings()
-      .then(setSettings)
+      .then((loaded) => {
+        setSettings(loaded);
+        setSavedSettings(loaded);
+      })
       .catch((error) => {
         if (error instanceof ApiError && error.code === "AUTH_NOT_CONFIGURED") {
           setAuthNotConfigured(true);
@@ -19,6 +22,18 @@ export function Setup() {
         setMessage(error instanceof Error ? error.message : "Failed to load setup.");
       });
   }, []);
+
+  const hasUnsavedChanges = useMemo(() => JSON.stringify(settings) !== JSON.stringify(savedSettings), [savedSettings, settings]);
+  const saveCurrentSettings = async () => {
+    if (!settings) return;
+    setSaving(true);
+    setMessage("Saving...");
+    const result = await saveSetupSettings(settings);
+    setSettings(result.settings);
+    if (result.message === "Saved") setSavedSettings(result.settings);
+    setMessage(result.message);
+    setSaving(false);
+  };
 
   if (authNotConfigured) {
     return (
@@ -38,11 +53,21 @@ export function Setup() {
   }
 
   if (!settings) return <p>{message || "Loading setup..."}</p>;
+
   return (
-    <div className="page">
-      <header>
-        <h1>Setup</h1>
-        <p>Configure the single-tenant control plane, Attendee connection, AI provider, email provider, policy, and retention.</p>
+    <div className="page setupPage">
+      <header className="setupHero">
+        <div>
+          <h1>Setup</h1>
+          <p>Configure tenant, integrations, policy, and retention.</p>
+        </div>
+        <div className="setupHeaderActions">
+          <span className={hasUnsavedChanges ? "setupStatusPill warning" : "setupStatusPill good"}>{hasUnsavedChanges ? "Unsaved changes" : "Saved"}</span>
+          <span className="setupStatusPill neutral">{settings.primaryDomain}</span>
+          <button className="primaryButton" type="button" disabled={saving || !hasUnsavedChanges} onClick={saveCurrentSettings}>
+            {saving ? "Saving..." : "Save settings"}
+          </button>
+        </div>
       </header>
       <SettingsForm
         value={settings}
@@ -50,38 +75,25 @@ export function Setup() {
           setMessage("Uploading bot image...");
           const uploaded = await uploadBotImage(await fileToBotImageUpload(file));
           setSettings(uploaded);
+          setSavedSettings(uploaded);
           setMessage("Bot image uploaded");
         }}
         onChange={setSettings}
       />
-      <div className="actions">
-        <button
-          disabled={saving}
-          onClick={async () => {
-            setSaving(true);
-            setMessage("Saving...");
-            const result = await saveSetupSettings(settings);
-            setSettings(result.settings);
-            setMessage(result.message);
-            setSaving(false);
-          }}
-        >
-          {saving ? "Saving..." : "Save settings"}
-        </button>
-        {message && <span>{message}</span>}
-      </div>
-      <section>
-        <h2>Test actions</h2>
-        <div className="actionGrid">
-          <TestActionButton path="/api/admin/test-d1" label="Test D1" />
-          <TestActionButton path="/api/admin/test-r2" label="Test R2" />
-          <TestActionButton path="/api/admin/test-attendee" label="Test Attendee connection" />
-          <TestActionButton path="/api/admin/test-ai" label="Test AI connection" />
-          <TestActionButton path="/api/admin/test-email" label="Test outbound email" />
-          <TestActionButton path="/api/admin/parse-sample-invite" label="Parse sample invite" />
-          <TestActionButton path="/api/admin/send-test-summary-email" label="Send test summary email" />
+      {message && <p className="setupMessage" role="status">{message}</p>}
+      {hasUnsavedChanges && (
+        <div className="stickySaveBar">
+          <span>Unsaved changes</span>
+          <div>
+            <button className="secondaryButton" type="button" disabled={saving || !savedSettings} onClick={() => savedSettings && setSettings(savedSettings)}>
+              Cancel
+            </button>
+            <button className="primaryButton" type="button" disabled={saving} onClick={saveCurrentSettings}>
+              {saving ? "Saving..." : "Save settings"}
+            </button>
+          </div>
         </div>
-      </section>
+      )}
     </div>
   );
 }
