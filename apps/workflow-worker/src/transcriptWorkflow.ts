@@ -1,16 +1,19 @@
-import { AttendeeClient, type AttendeeTranscriptSegment } from "@minutesbot/attendee-client";
-import { createArtifact, createAuditLog, getMeeting, getSettings, insertTranscriptSegment, updateTranscriptStatus } from "@minutesbot/db";
+import { AttendeeClient } from "@minutesbot/attendee-client";
+import { createAuditLog, getMeeting, getSettings, updateTranscriptStatus, upsertArtifact } from "@minutesbot/db";
 import { createOpenRouterTranscriptionProvider } from "@minutesbot/summary-engine";
-import { AppError, resolveAttendeeBaseUrl } from "@minutesbot/shared";
+import { AppError, recordingR2Key, resolveAttendeeBaseUrl } from "@minutesbot/shared";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import type { WorkflowEnv } from "./env";
 
-type Params = { meetingId: string; botId?: string; forceAttendeeFetch?: boolean };
+type Params = { meetingId: string; botId?: string; attempt?: number };
+
+const RECORDING_RETRY_DELAY_SECONDS = 60;
+const MAX_RECORDING_FETCH_ATTEMPTS = 10;
 
 export class TranscriptWorkflow extends WorkflowEntrypoint<WorkflowEnv, Params> {
   async run(event: WorkflowEvent<Params>, step: WorkflowStep): Promise<void> {
-    await fetchAndStoreTranscript(this.env, event.payload.meetingId, event.payload.botId, step.do.bind(step), { forceAttendeeFetch: event.payload.forceAttendeeFetch });
+    await fetchAndStoreTranscript(this.env, event.payload.meetingId, event.payload.botId, step.do.bind(step), { attempt: event.payload.attempt });
   }
 }
 
@@ -19,23 +22,44 @@ export async function fetchAndStoreTranscript(
   meetingId: string,
   botId?: string,
   runStep: <T>(name: string, callback: () => Promise<T>) => Promise<T> = (_name, callback) => callback(),
-  options: { forceAttendeeFetch?: boolean } = {}
+  options: { attempt?: number } = {}
 ): Promise<void> {
   const meeting = await runStep("load meeting", () => getMeeting(env.DB, meetingId));
   if (!meeting) throw new AppError("NOT_FOUND", "Meeting not found", 404);
   const settings = await runStep("load settings", () => getSettings(env.DB));
   const attendeeBotId = botId ?? meeting.attendee_bot_id;
-  if (!attendeeBotId) throw new AppError("BOT_ID_MISSING", "Meeting has no Attendee bot ID", 400);
-  if (!env.ATTENDEE_API_KEY) throw new AppError("ATTENDEE_API_KEY_MISSING", "ATTENDEE_API_KEY secret is not configured", 500);
-
-  const client = new AttendeeClient({ baseUrl: resolveAttendeeBaseUrl(settings.attendee.baseUrl, env.ATTENDEE_API_BASE_URL), apiKey: env.ATTENDEE_API_KEY });
+  const recordingKey = recordingR2Key(meetingId);
   try {
-    const attendeeTranscript = await runStep("fetch Attendee transcript", () =>
-      options.forceAttendeeFetch ? client.getBotTranscript(attendeeBotId, { force: true }) : client.getBotTranscript(attendeeBotId)
+    const recordingObject = await runStep("load R2 recording", () => env.ARTIFACTS.get(recordingKey));
+    if (!recordingObject) {
+      await handleMissingRecording(env, meetingId, attendeeBotId ?? undefined, recordingKey, options.attempt ?? 0);
+      return;
+    }
+
+    const contentType = recordingContentType(recordingObject, recordingKey);
+    if (!contentType) {
+      await updateTranscriptStatus(env.DB, meetingId, "unavailable", "NO_TRANSCRIPT_AVAILABLE");
+      await createAuditLog(env.DB, {
+        eventType: "transcript.unavailable",
+        resourceType: "meeting",
+        resourceId: meetingId,
+        metadata: { reason: `R2 recording media is unavailable; received ${recordingObject.httpMetadata?.contentType ?? "unknown"}`, recordingKey }
+      });
+      return;
+    }
+
+    const recordingData = await runStep("read R2 recording", () => recordingObject.arrayBuffer());
+    await runStep("record recording artifact", () =>
+      upsertArtifact(env.DB, {
+        meeting_id: meetingId,
+        type: "recording",
+        r2_key: recordingKey,
+        content_type: contentType,
+        size_bytes: recordingObject.size,
+        deleted_at: null
+      })
     );
-    const attendeeText = await storeAttendeeTranscriptSegments(env.DB, meetingId, attendeeBotId, attendeeTranscript);
-    const recording = await fetchAndStoreRecording(env, meetingId, client, attendeeBotId, attendeeText.length > 0, runStep);
-    const transcription = attendeeText.length > 0 ? { source: "attendee", model: null, text: attendeeText, usage: null } : await transcribeStoredRecording(env, settings, recording, runStep);
+    const transcription = await transcribeRecording(env, settings, recordingData, contentType, runStep);
     const plainText = transcription.text.trim();
     if (!plainText) {
       await updateTranscriptStatus(env.DB, meetingId, "unavailable", "NO_TRANSCRIPT_AVAILABLE");
@@ -48,12 +72,12 @@ export async function fetchAndStoreTranscript(
     const textKey = `transcripts/${meetingId}/transcript.txt`;
     await env.ARTIFACTS.put(textKey, plainText, { httpMetadata: { contentType: "text/plain" } });
     await env.ARTIFACTS.put(jsonKey, jsonBody, { httpMetadata: { contentType: "application/json" } });
-    await createArtifact(env.DB, { meeting_id: meetingId, type: "transcript_text", r2_key: textKey, content_type: "text/plain", size_bytes: byteLength(plainText), deleted_at: null });
-    await createArtifact(env.DB, { meeting_id: meetingId, type: "transcript_json", r2_key: jsonKey, content_type: "application/json", size_bytes: byteLength(jsonBody), deleted_at: null });
+    await upsertArtifact(env.DB, { meeting_id: meetingId, type: "transcript_text", r2_key: textKey, content_type: "text/plain", size_bytes: byteLength(plainText), deleted_at: null });
+    await upsertArtifact(env.DB, { meeting_id: meetingId, type: "transcript_json", r2_key: jsonKey, content_type: "application/json", size_bytes: byteLength(jsonBody), deleted_at: null });
     await updateTranscriptStatus(env.DB, meetingId, "complete", "TRANSCRIPT_AVAILABLE");
     await createAuditLog(env.DB, { eventType: "transcript.fetched", resourceType: "meeting", resourceId: meetingId, metadata: { source: transcription.source, model: transcription.model } });
     await env.SUMMARY_QUEUE.send({ type: "summarize", meetingId });
-    if (settings.attendee.deleteAttendeeDataAfterTranscriptFetch) await client.deleteBotData(attendeeBotId);
+    if (settings.attendee.deleteAttendeeDataAfterTranscriptFetch && attendeeBotId) await deleteAttendeeData(env, settings, attendeeBotId);
   } catch (error) {
     await updateTranscriptStatus(env.DB, meetingId, "failed", "FAILED");
     await createAuditLog(env.DB, {
@@ -66,52 +90,44 @@ export async function fetchAndStoreTranscript(
   }
 }
 
-async function fetchAndStoreRecording(
-  env: WorkflowEnv,
-  meetingId: string,
-  client: AttendeeClient,
-  attendeeBotId: string,
-  optional: boolean,
-  runStep: <T>(name: string, callback: () => Promise<T>) => Promise<T>
-) {
-  try {
-    const recording = await runStep("fetch recording", () => client.getBotRecording(attendeeBotId));
-    const recordingKey = `recordings/${meetingId}/recording.${recordingExtension(recording.contentType)}`;
-    await env.ARTIFACTS.put(recordingKey, recording.data, { httpMetadata: { contentType: recording.contentType } });
-    await createArtifact(env.DB, {
-      meeting_id: meetingId,
-      type: "recording",
-      r2_key: recordingKey,
-      content_type: recording.contentType,
-      size_bytes: recording.sizeBytes ?? recording.data.byteLength,
-      deleted_at: null
-    });
-    return recording;
-  } catch (error) {
-    if (!optional) throw error;
+async function handleMissingRecording(env: WorkflowEnv, meetingId: string, attendeeBotId: string | undefined, recordingKey: string, attempt: number): Promise<void> {
+  if (attempt >= MAX_RECORDING_FETCH_ATTEMPTS) {
+    await updateTranscriptStatus(env.DB, meetingId, "unavailable", "NO_TRANSCRIPT_AVAILABLE");
     await createAuditLog(env.DB, {
-      eventType: "recording.unavailable",
+      eventType: "transcript.unavailable",
       resourceType: "meeting",
       resourceId: meetingId,
-      metadata: { reason: error instanceof Error ? error.message : String(error) }
+      metadata: { reason: "R2 recording is not available", recordingKey, attempts: attempt }
     });
-    return null;
+    return;
   }
+
+  const nextAttempt = attempt + 1;
+  await createAuditLog(env.DB, {
+    eventType: "transcript.recording_pending",
+    resourceType: "meeting",
+    resourceId: meetingId,
+    metadata: { recordingKey, attempt: nextAttempt, maxAttempts: MAX_RECORDING_FETCH_ATTEMPTS }
+  });
+  await env.SUMMARY_QUEUE.send(
+    {
+      type: "fetch_transcript",
+      meetingId,
+      ...(attendeeBotId ? { botId: attendeeBotId } : {}),
+      attempt: nextAttempt
+    },
+    { delaySeconds: RECORDING_RETRY_DELAY_SECONDS }
+  );
 }
 
-function requireRecording(recording: Awaited<ReturnType<typeof fetchAndStoreRecording>>) {
-  if (!recording) throw new AppError("ATTENDEE_RECORDING_UNAVAILABLE", "Attendee recording media is unavailable", 503);
-  return recording;
-}
-
-async function transcribeStoredRecording(
+async function deleteAttendeeData(
   env: WorkflowEnv,
   settings: Awaited<ReturnType<typeof getSettings>>,
-  recording: Awaited<ReturnType<typeof fetchAndStoreRecording>>,
-  runStep: <T>(name: string, callback: () => Promise<T>) => Promise<T>
-) {
-  const availableRecording = requireRecording(recording);
-  return transcribeRecording(env, settings, availableRecording.data, availableRecording.contentType, runStep);
+  attendeeBotId: string
+): Promise<void> {
+  if (!env.ATTENDEE_API_KEY) throw new AppError("ATTENDEE_API_KEY_MISSING", "ATTENDEE_API_KEY secret is not configured", 500);
+  const client = new AttendeeClient({ baseUrl: resolveAttendeeBaseUrl(settings.attendee.baseUrl, env.ATTENDEE_API_BASE_URL), apiKey: env.ATTENDEE_API_KEY });
+  await client.deleteBotData(attendeeBotId);
 }
 
 async function transcribeRecording(
@@ -132,42 +148,17 @@ async function transcribeRecording(
   return { source: "openrouter", model: settings.recap.transcriptionModel, text: transcription.text, usage: transcription.usage ?? null };
 }
 
-async function storeAttendeeTranscriptSegments(db: D1Database, meetingId: string, attendeeBotId: string, segments: AttendeeTranscriptSegment[]): Promise<string> {
-  const lines: string[] = [];
-  for (const segment of segments) {
-    const text = transcriptText(segment).trim();
-    if (!text) continue;
-    await insertTranscriptSegment(db, {
-      meeting_id: meetingId,
-      attendee_bot_id: attendeeBotId,
-      speaker_name: segment.speaker_name ?? null,
-      speaker_uuid: segment.speaker_uuid ?? null,
-      speaker_user_uuid: segment.speaker_user_uuid ?? null,
-      timestamp_ms: segment.timestamp_ms ?? null,
-      duration_ms: segment.duration_ms ?? null,
-      text,
-      source: "attendee"
-    });
-    lines.push(segment.speaker_name ? `${segment.speaker_name}: ${text}` : text);
-  }
-  return lines.join("\n");
+function recordingContentType(recordingObject: R2ObjectBody, recordingKey: string): string | null {
+  const explicitType = recordingObject.httpMetadata?.contentType?.split(";")[0]?.trim().toLowerCase();
+  if (!explicitType) return inferContentType(recordingKey);
+  if (explicitType === "application/octet-stream") return inferContentType(recordingKey) ?? explicitType;
+  if (explicitType.startsWith("audio/") || explicitType.startsWith("video/")) return explicitType;
+  return null;
 }
 
-function transcriptText(segment: AttendeeTranscriptSegment): string {
-  const transcription = segment.transcription;
-  if (typeof transcription === "string") return transcription;
-  return typeof transcription.transcript === "string" ? transcription.transcript : "";
-}
-
-function recordingExtension(contentType: string): string {
-  const type = contentType.split(";")[0]?.trim().toLowerCase();
-  if (type === "audio/mpeg") return "mp3";
-  if (type === "audio/mp4" || type === "audio/x-m4a") return "mp4";
-  if (type === "video/mp4") return "mp4";
-  if (type === "audio/wav" || type === "audio/wave") return "wav";
-  if (type === "audio/webm") return "webm";
-  if (type === "audio/ogg") return "ogg";
-  return "bin";
+function inferContentType(key: string): string | null {
+  if (key.toLowerCase().endsWith(".mp3")) return "audio/mpeg";
+  return null;
 }
 
 function byteLength(value: string): number {

@@ -12,7 +12,8 @@ flowchart LR
   Webhook --> D1
   Webhook --> Queue["Queues"]
   Queue --> Transcript["Transcript Workflow"]
-  Transcript --> Attendee
+  Attendee --> R2Recording["R2 MP3 recording"]
+  R2Recording --> Transcript
   Transcript --> R2
   Transcript --> Summary["Summary Workflow"]
   Summary --> AI["OpenAI-compatible AI"]
@@ -27,10 +28,10 @@ minutesbot is the Cloudflare control plane. Attendee is the meeting-bot backend 
 2. The invite parser extracts UID, METHOD, subject, organizer, attendees, times, and Teams URL.
 3. Recipient policy marks eligible same-company attendees and excludes external recipients by default.
 4. D1 stores meeting metadata, attendees, webhook events, email deliveries, summaries metadata, and audit logs.
-5. R2 stores raw invites, transcript JSON/text, summaries, and artifacts.
-6. Workflow creates an Attendee bot before start time and supplies bot-level webhooks.
+5. R2 stores raw invites, Attendee-uploaded MP3 recordings, transcript JSON/text, summaries, and artifacts.
+6. Workflow creates an Attendee bot before start time and supplies bot-level webhooks plus MP3 external media storage settings.
 7. Attendee posts signed webhook events to `/api/webhooks/attendee`.
-8. Transcript workflow fetches final transcript from Attendee, stores artifacts, and queues summarization.
+8. After Attendee post-processing completes, Transcript workflow reads `recordings/<meetingId>/recording.mp3` from R2, transcribes it with the OpenRouter/Whisper provider, stores transcript artifacts, and queues summarization.
 9. Summary workflow generates notes, filters recipients, and sends only eligible same-company attendees.
 
 ## Failure States

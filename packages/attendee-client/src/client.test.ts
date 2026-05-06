@@ -28,6 +28,35 @@ describe("AttendeeClient", () => {
     );
   });
 
+  it("serializes recording and external media storage settings when creating bots", async () => {
+    const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      Response.json({ id: "bot_1", meeting_url: "https://teams.microsoft.com/l/meetup-join/x", state: "created" })
+    );
+    const client = new AttendeeClient({ baseUrl: "https://attendee.company.com/", apiKey: "secret", fetcher });
+
+    await client.createBot({
+      meetingUrl: "https://teams.microsoft.com/l/meetup-join/x",
+      botName: "minutesbot",
+      recordingSettings: { format: "mp3" },
+      externalMediaStorageSettings: {
+        bucketName: "minutesbot-artifacts",
+        recordingFileName: "recordings/mtg_1/recording.mp3"
+      }
+    } as Parameters<AttendeeClient["createBot"]>[0] & {
+      recordingSettings: { format: "mp3" };
+      externalMediaStorageSettings: { bucketName: string; recordingFileName: string };
+    });
+
+    const body = JSON.parse(fetcher.mock.calls[0]?.[1]?.body as string);
+    expect(body).toMatchObject({
+      recording_settings: { format: "mp3" },
+      external_media_storage_settings: {
+        bucket_name: "minutesbot-artifacts",
+        recording_file_name: "recordings/mtg_1/recording.mp3"
+      }
+    });
+  });
+
   it("normalizes rate limits into retryable typed errors", async () => {
     const fetcher = vi.fn(async () => new Response("rate limited", { status: 429 }));
     const client = new AttendeeClient({ baseUrl: "https://attendee.company.com", apiKey: "secret", fetcher });

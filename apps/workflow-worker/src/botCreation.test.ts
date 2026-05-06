@@ -51,6 +51,7 @@ function env(overrides: Partial<WorkflowEnv> = {}, db = new BotCreationD1()): Wo
     EMAIL_QUEUE: { send: vi.fn() },
     ATTENDEE_API_BASE_URL: "https://attendee.example.com",
     ATTENDEE_API_KEY: "attendee-secret",
+    ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME: "minutesbot-artifacts",
     API_BASE_URL: "https://minutesbot.example.com",
     ...overrides
   };
@@ -59,6 +60,33 @@ function env(overrides: Partial<WorkflowEnv> = {}, db = new BotCreationD1()): Wo
 describe("createMeetingBot failure handling", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("creates Attendee bots with MP3 recording upload to R2", async () => {
+    const db = new BotCreationD1();
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        requests.push({ url: String(url), init });
+        if (String(url).endsWith("/_ops/health")) return Response.json({ ok: true, runtime: "cloudflare-containers", missing: [] });
+        return Response.json({ id: "bot_1", meeting_url: "https://teams.microsoft.com/l/meetup-join/abc", state: "joining" }, { status: 201 });
+      })
+    );
+
+    await createMeetingBot(env({}, db), "mtg_1");
+
+    const createRequest = requests.find((request) => request.url.endsWith("/api/v1/bots"));
+    expect(createRequest).toBeDefined();
+    expect(JSON.parse(createRequest?.init?.body as string)).toMatchObject({
+      meeting_url: "https://teams.microsoft.com/l/meetup-join/abc",
+      bot_name: "minutesbot",
+      recording_settings: { format: "mp3" },
+      external_media_storage_settings: {
+        bucket_name: "minutesbot-artifacts",
+        recording_file_name: "recordings/mtg_1/recording.mp3"
+      }
+    });
   });
 
   it("stores a visible failure when ATTENDEE_API_KEY is missing", async () => {

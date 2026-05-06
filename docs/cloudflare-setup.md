@@ -23,6 +23,7 @@ If `pnpm check` returns a Vercel `DEPLOYMENT_NOT_FOUND` response, the registrar 
 
 - D1 database binding: `DB`
 - R2 bucket binding: `ARTIFACTS`
+- Attendee external media bucket var: `ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME`
 - Queues: `INVITE_QUEUE`, `SUMMARY_QUEUE`, `EMAIL_QUEUE`
 - Workflow binding: `MEETING_WORKFLOW`
 - Optional email binding: `SEND_EMAIL`
@@ -56,6 +57,18 @@ pnpm deploy:staging
 Configure Email Routing to send `notetaker@meet.company.com` to the Email Worker. Configure custom domains such as `notes.company.com`, `api.company.com`, and `attendee.company.com` in Cloudflare DNS/routes.
 
 Protect the admin UI with Cloudflare Access for the MVP.
+
+## Attendee External Media Storage
+
+Create Cloudflare R2 S3 credentials scoped to the `minutesbot-artifacts` bucket with object read/write access, then save them in Attendee under External Media Storage Credentials:
+
+```text
+Endpoint URL: https://<account_id>.r2.cloudflarestorage.com
+Region Name: auto
+Bucket name used by minutesbot: minutesbot-artifacts
+```
+
+minutesbot supplies `recording_settings.format = mp3` and `external_media_storage_settings.bucket_name = ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME` when creating each Attendee bot. Attendee uploads the recording to `recordings/<meetingId>/recording.mp3`, and minutesbot reads that R2 object for Whisper/OpenRouter transcription.
 
 ## Attendee Boundary
 

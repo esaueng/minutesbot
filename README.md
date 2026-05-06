@@ -2,7 +2,7 @@
 
 minutesbot is an open-source, self-hosted, single-tenant Microsoft Teams meeting notetaker control plane. It coordinates meeting invites, scheduling, Attendee bot creation, Attendee webhooks, transcript artifact storage, AI summaries, recipient filtering, email delivery, retention, and audit visibility.
 
-minutesbot does not directly record Teams meetings. Attendee joins meetings and performs recording/transcription, either through Attendee hosted services or a separate self-hosted Attendee backend.
+minutesbot does not directly record Teams meetings. Attendee joins meetings and uploads an MP3 recording to minutesbot's R2 bucket; minutesbot then transcribes that recording and generates the recap.
 
 This repository is Cloudflare-first. The minutesbot control plane runs on Cloudflare Workers, Workers Static Assets, D1, R2, Queues, Workflows, and Email Routing. Attendee itself cannot be rewritten into Workers/D1/R2 without a separate product rewrite; the supported Cloudflare-hosted option is upstream Attendee on Cloudflare Containers with external Postgres and Redis-compatible services.
 
@@ -12,7 +12,7 @@ This repository is Cloudflare-first. The minutesbot control plane runs on Cloudf
 - Hono API Worker for settings, dashboards, retry actions, artifacts, audit logs, and Attendee webhooks.
 - Cloudflare Email Worker for inbound recorder mailbox invites.
 - Cloudflare D1 for metadata and audit state.
-- Cloudflare R2 for raw invites, transcript files, summaries, and artifacts.
+- Cloudflare R2 for raw invites, Attendee-uploaded recordings, transcript files, summaries, and artifacts.
 - Cloudflare Queues and Workflows for durable bot creation, transcript finalization, summaries, email, and cleanup.
 - Fetch-based Attendee REST client in `packages/attendee-client`.
 - Optional Cloudflare Container router for self-hosted upstream Attendee in `deploy/attendee-container`.

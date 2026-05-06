@@ -1,6 +1,6 @@
 import { AttendeeClient, AttendeeClientError, type AttendeeBot } from "@minutesbot/attendee-client";
 import { createAuditLog, getMeeting, getSettings, updateMeetingBotState, updateMeetingStatus } from "@minutesbot/db";
-import { AppError, minutesBefore, resolveAttendeeBaseUrl } from "@minutesbot/shared";
+import { AppError, minutesBefore, recordingR2Key, resolveAttendeeBaseUrl } from "@minutesbot/shared";
 import type { WorkflowEnv } from "./env";
 
 const MAX_QUEUE_DELAY_SECONDS = 12 * 60 * 60;
@@ -34,11 +34,19 @@ export async function createMeetingBot(env: WorkflowEnv, meetingId: string): Pro
   let bot: AttendeeBot;
   try {
     if (!env.ATTENDEE_API_KEY) throw new AppError("ATTENDEE_API_KEY_MISSING", "ATTENDEE_API_KEY secret is not configured", 500);
+    if (!env.ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME) {
+      throw new AppError("ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME_MISSING", "ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME is not configured", 500);
+    }
     const client = new AttendeeClient({ baseUrl: resolveAttendeeBaseUrl(settings.attendee.baseUrl, env.ATTENDEE_API_BASE_URL), apiKey: env.ATTENDEE_API_KEY });
     await client.checkHealth();
     bot = await client.createBot({
       meetingUrl: meeting.teams_join_url ?? "",
       botName: settings.attendee.botName,
+      recordingSettings: { format: "mp3" },
+      externalMediaStorageSettings: {
+        bucketName: env.ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME,
+        recordingFileName: recordingR2Key(meeting.id)
+      },
       webhooks: [
         {
           url: `${env.API_BASE_URL}/api/webhooks/attendee`,

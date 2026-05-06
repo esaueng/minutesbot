@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { z } from "zod";
 import { verifyAttendeeWebhookSignature } from "@minutesbot/attendee-client";
 import { AppError } from "@minutesbot/shared";
@@ -13,7 +14,7 @@ const payloadSchema = z.object({
   data: z.record(z.unknown())
 });
 
-export const attendeeWebhookRoute = new Hono<{ Bindings: Env }>().post("/", async (c) => {
+async function handleAttendeeWebhook(c: Context<{ Bindings: Env }>) {
   const rawBody = await c.req.text();
   if (c.env.ATTENDEE_WEBHOOK_SECRET) {
     const valid = await verifyAttendeeWebhookSignature({
@@ -25,4 +26,6 @@ export const attendeeWebhookRoute = new Hono<{ Bindings: Env }>().post("/", asyn
   }
   const payload = payloadSchema.parse(JSON.parse(rawBody));
   return c.json({ ok: true, ...(await processAttendeeWebhook(c.env, payload)) });
-});
+}
+
+export const attendeeWebhookRoute = new Hono<{ Bindings: Env }>().post("/", handleAttendeeWebhook).post("", handleAttendeeWebhook);

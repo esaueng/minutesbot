@@ -9,6 +9,13 @@ export type AttendeeWebhookTrigger =
 export type CreateAttendeeBotInput = {
   meetingUrl: string;
   botName: string;
+  recordingSettings?: {
+    format: "mp3" | "mp4" | "webm";
+  };
+  externalMediaStorageSettings?: {
+    bucketName: string;
+    recordingFileName?: string;
+  };
   webhooks?: Array<{
     url: string;
     triggers: AttendeeWebhookTrigger[];

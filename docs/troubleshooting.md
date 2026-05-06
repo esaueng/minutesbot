@@ -8,8 +8,9 @@
 - Attendee auth failed: verify `ATTENDEE_API_KEY` with `wrangler secret put`.
 - Bot stuck in waiting room: confirm meeting lobby policy and bot admission process.
 - Bot fatal error: inspect Attendee logs and `bot_logs.update` webhook events.
-- Transcript empty: confirm the bot joined, recording/transcription started, and the meeting had speech.
-- Transcription incomplete: retry transcript fetch after Attendee post-processing completes.
+- Transcript pending: confirm Attendee External Media Storage Credentials can write to the configured R2 bucket and that `recordings/<meetingId>/recording.mp3` exists.
+- Transcript empty: confirm the bot joined, Attendee uploaded an MP3 recording, and the meeting had speech.
+- Transcription incomplete: retry transcript fetch after Attendee post-processing completes and the R2 recording is present.
 - Webhook signature invalid: ensure the base64 webhook secret matches Attendee configuration.
 - Duplicate webhook ignored: expected when `idempotency_key` has already been processed.
 - Outbound email failure: test provider configuration and sender verification.

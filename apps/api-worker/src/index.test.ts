@@ -43,7 +43,7 @@ describe("api worker", () => {
     expect(entrypoint).toHaveProperty("MeetingWorkflow");
   });
 
-  it("queues manual transcript fetches as forced Attendee requests", async () => {
+  it("queues manual transcript fetches as R2 recording processing requests", async () => {
     const send = vi.fn(async () => undefined);
     const response = await app.request(
       "/api/meetings/mtg_1/fetch-transcript",
@@ -59,7 +59,7 @@ describe("api worker", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(send).toHaveBeenCalledWith({ type: "fetch_transcript", meetingId: "mtg_1", forceAttendeeFetch: true });
+    expect(send).toHaveBeenCalledWith({ type: "fetch_transcript", meetingId: "mtg_1" });
   });
 
   it("handles inbound email on the deployed worker entrypoint", async () => {

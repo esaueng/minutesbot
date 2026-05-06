@@ -38,6 +38,7 @@ app.route("/api/admin/audit-logs", auditLogsRoute);
 app.route("/api/meetings", meetingsRoute);
 app.route("/api/artifacts", artifactsRoute);
 app.route("/api/webhooks/attendee", attendeeWebhookRoute);
+app.route("/api/webhooks/attendee/", attendeeWebhookRoute);
 
 export default {
   fetch: app.fetch,

@@ -1,13 +1,15 @@
 import { defaultSettings } from "@minutesbot/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchAndStoreTranscript } from "./transcriptWorkflow";
+import type { WorkflowEnv } from "./env";
 
 const getBotRecording = vi.fn();
 const getBotTranscript = vi.fn();
+const deleteBotData = vi.fn();
 const transcribe = vi.fn();
 
 vi.mock("@minutesbot/attendee-client", () => ({
-  AttendeeClient: vi.fn(() => ({ getBotRecording, getBotTranscript, deleteBotData: vi.fn() }))
+  AttendeeClient: vi.fn(() => ({ getBotRecording, getBotTranscript, deleteBotData }))
 }));
 
 vi.mock("@minutesbot/summary-engine", async (importOriginal) => ({
@@ -15,10 +17,28 @@ vi.mock("@minutesbot/summary-engine", async (importOriginal) => ({
   createOpenRouterTranscriptionProvider: vi.fn(() => ({ transcribe }))
 }));
 
+type ArtifactRow = {
+  id: string;
+  meeting_id: string;
+  type: string;
+  r2_key: string;
+  content_type: string | null;
+  size_bytes: number | null;
+  created_at: string;
+  deleted_at: string | null;
+};
+
 class FakeD1 {
   artifacts: unknown[][] = [];
+  artifactUpdates: unknown[][] = [];
   meetingUpdates: unknown[][] = [];
   auditLogs: unknown[][] = [];
+  existingArtifacts = new Map<string, ArtifactRow>();
+  meeting = { id: "mtg_1", attendee_bot_id: "bot_1" };
+  settings = {
+    ...defaultSettings,
+    ai: { ...defaultSettings.ai, baseUrl: "https://openrouter.ai/api/v1" }
+  };
 
   prepare(sql: string) {
     const db = this;
@@ -29,21 +49,20 @@ class FakeD1 {
         return this;
       },
       async first() {
-        if (sql.includes("FROM meetings")) return { id: "mtg_1", attendee_bot_id: "bot_1" };
+        if (sql.includes("FROM meetings")) return db.meeting;
         if (sql.includes("FROM settings")) {
           return {
             key: "app",
-            value: JSON.stringify({
-              ...defaultSettings,
-              ai: { ...defaultSettings.ai, baseUrl: "https://openrouter.ai/api/v1" }
-            }),
+            value: JSON.stringify(db.settings),
             updated_at: "2026-05-04T00:00:00.000Z"
           };
         }
+        if (sql.includes("FROM artifacts")) return db.existingArtifacts.get(artifactKey(this.values[0], this.values[1], this.values[2])) ?? null;
         return null;
       },
       async run() {
         if (sql.includes("INSERT INTO artifacts")) db.artifacts.push(this.values);
+        if (sql.startsWith("UPDATE artifacts SET")) db.artifactUpdates.push(this.values);
         if (sql.includes("UPDATE meetings SET transcript_status")) db.meetingUpdates.push(this.values);
         if (sql.includes("INSERT INTO audit_logs")) db.auditLogs.push(this.values);
         return { success: true };
@@ -56,156 +75,115 @@ describe("transcript workflow", () => {
   beforeEach(() => {
     getBotRecording.mockReset();
     getBotTranscript.mockReset();
+    deleteBotData.mockReset();
     transcribe.mockReset();
   });
 
-  it("stores Attendee transcript segments without re-transcribing the recording", async () => {
+  it("transcribes the expected R2 MP3 without calling Attendee transcript or recording endpoints", async () => {
     const db = new FakeD1();
-    const r2Put = vi.fn(async () => undefined);
+    const audio = new Uint8Array([1, 2, 3]).buffer;
+    const artifacts = r2WithRecording(audio);
     const summaryQueue = { send: vi.fn() };
-    getBotRecording.mockResolvedValue({ data: new Uint8Array([1, 2, 3]).buffer, contentType: "audio/mp4", sizeBytes: 3 });
-    getBotTranscript.mockResolvedValue([
-      {
-        speaker_name: "Alex",
-        speaker_uuid: "speaker-1",
-        speaker_user_uuid: "user-1",
-        timestamp_ms: 7000,
-        duration_ms: 1800,
-        transcription: { transcript: "Hello from Attendee." }
-      }
-    ]);
+    transcribe.mockResolvedValue({ text: "Alex: hello", usage: { seconds: 2.5 } });
 
-    await fetchAndStoreTranscript(
-      {
-        DB: db as unknown as D1Database,
-        ARTIFACTS: { put: r2Put } as unknown as R2Bucket,
-        INVITE_QUEUE: { send: vi.fn() },
-        SUMMARY_QUEUE: summaryQueue,
-        EMAIL_QUEUE: { send: vi.fn() },
-        ATTENDEE_API_BASE_URL: "https://attendee.wgsglobal.app",
-        API_BASE_URL: "https://minutesbot.wgsglobal.app",
-        ATTENDEE_API_KEY: "attendee-key",
-        AI_API_KEY: "openrouter-key"
-      },
-      "mtg_1"
-    );
+    await fetchAndStoreTranscript(env(db, artifacts, summaryQueue), "mtg_1");
 
-    expect(getBotTranscript).toHaveBeenCalledWith("bot_1");
-    expect(getBotRecording).toHaveBeenCalledWith("bot_1");
-    expect(transcribe).not.toHaveBeenCalled();
-    expect(r2Put).toHaveBeenCalledWith("recordings/mtg_1/recording.mp4", expect.any(ArrayBuffer), expect.any(Object));
-    expect(r2Put).toHaveBeenCalledWith("transcripts/mtg_1/transcript.txt", "Alex: Hello from Attendee.", expect.any(Object));
+    expect(getBotTranscript).not.toHaveBeenCalled();
+    expect(getBotRecording).not.toHaveBeenCalled();
+    expect(artifacts.get).toHaveBeenCalledWith("recordings/mtg_1/recording.mp3");
+    expect(transcribe).toHaveBeenCalledWith(audio, "audio/mpeg");
+    expect(artifacts.put).toHaveBeenCalledWith("transcripts/mtg_1/transcript.txt", "Alex: hello", expect.any(Object));
     expect(db.artifacts.map((values) => values[2])).toEqual(["recording", "transcript_text", "transcript_json"]);
     expect(summaryQueue.send).toHaveBeenCalledWith({ type: "summarize", meetingId: "mtg_1" });
   });
 
-  it("completes with Attendee transcript when recording media is unavailable", async () => {
+  it("requeues with delay while the expected R2 recording is missing", async () => {
     const db = new FakeD1();
-    const r2Put = vi.fn(async () => undefined);
+    const artifacts = r2WithoutRecording();
     const summaryQueue = { send: vi.fn() };
-    getBotRecording.mockRejectedValue(new Error("Recording is not available yet"));
-    getBotTranscript.mockResolvedValue([{ speaker_name: "Alex", transcription: "Hello from Attendee." }]);
 
-    await fetchAndStoreTranscript(
-      {
-        DB: db as unknown as D1Database,
-        ARTIFACTS: { put: r2Put } as unknown as R2Bucket,
-        INVITE_QUEUE: { send: vi.fn() },
-        SUMMARY_QUEUE: summaryQueue,
-        EMAIL_QUEUE: { send: vi.fn() },
-        ATTENDEE_API_BASE_URL: "https://attendee.wgsglobal.app",
-        API_BASE_URL: "https://minutesbot.wgsglobal.app",
-        ATTENDEE_API_KEY: "attendee-key",
-        AI_API_KEY: "openrouter-key"
-      },
-      "mtg_1"
-    );
+    await fetchAndStoreTranscript(env(db, artifacts, summaryQueue), "mtg_1");
 
-    expect(transcribe).not.toHaveBeenCalled();
-    expect(r2Put).toHaveBeenCalledWith("transcripts/mtg_1/transcript.txt", "Alex: Hello from Attendee.", expect.any(Object));
+    expect(summaryQueue.send).toHaveBeenCalledWith({ type: "fetch_transcript", meetingId: "mtg_1", botId: "bot_1", attempt: 1 }, { delaySeconds: 60 });
+    expect(db.meetingUpdates).toEqual([]);
+    expect(db.auditLogs.map((values) => values[2])).toContain("transcript.recording_pending");
+    expect(db.auditLogs.map((values) => values[2])).not.toContain("transcript.failed");
+    expect(db.artifacts).toEqual([]);
+  });
+
+  it("marks transcript unavailable after the final missing-recording attempt", async () => {
+    const db = new FakeD1();
+    const artifacts = r2WithoutRecording();
+    const summaryQueue = { send: vi.fn() };
+
+    await fetchAndStoreTranscript(env(db, artifacts, summaryQueue), "mtg_1", undefined, undefined, { attempt: 10 });
+
+    expect(summaryQueue.send).not.toHaveBeenCalled();
+    expect(db.meetingUpdates.at(-1)?.[0]).toBe("unavailable");
+    expect(db.meetingUpdates.at(-1)?.[1]).toBe("NO_TRANSCRIPT_AVAILABLE");
+    expect(db.auditLogs.map((values) => values[2])).toContain("transcript.unavailable");
+  });
+
+  it("updates the existing recording artifact instead of inserting duplicate recording rows", async () => {
+    const db = new FakeD1();
+    db.existingArtifacts.set(artifactKey("mtg_1", "recording", "recordings/mtg_1/recording.mp3"), {
+      id: "art_1",
+      meeting_id: "mtg_1",
+      type: "recording",
+      r2_key: "recordings/mtg_1/recording.mp3",
+      content_type: "audio/mpeg",
+      size_bytes: 1,
+      created_at: "2026-05-04T00:00:00.000Z",
+      deleted_at: null
+    });
+    const artifacts = r2WithRecording(new Uint8Array([1, 2, 3]).buffer);
+    transcribe.mockResolvedValue({ text: "Alex: hello", usage: null });
+
+    await fetchAndStoreTranscript(env(db, artifacts, { send: vi.fn() }), "mtg_1");
+
     expect(db.artifacts.map((values) => values[2])).toEqual(["transcript_text", "transcript_json"]);
-    expect(summaryQueue.send).toHaveBeenCalledWith({ type: "summarize", meetingId: "mtg_1" });
-  });
-
-  it("falls back to OpenRouter transcription when Attendee has no transcript", async () => {
-    const db = new FakeD1();
-    const r2Put = vi.fn(async () => undefined);
-    const summaryQueue = { send: vi.fn() };
-    getBotTranscript.mockResolvedValue([]);
-    getBotRecording.mockResolvedValue({ data: new Uint8Array([1, 2, 3]).buffer, contentType: "audio/mp4", sizeBytes: 3 });
-    transcribe.mockResolvedValue({ text: "Alex: hello", usage: { seconds: 2.5 } });
-
-    await fetchAndStoreTranscript(
-      {
-        DB: db as unknown as D1Database,
-        ARTIFACTS: { put: r2Put } as unknown as R2Bucket,
-        INVITE_QUEUE: { send: vi.fn() },
-        SUMMARY_QUEUE: summaryQueue,
-        EMAIL_QUEUE: { send: vi.fn() },
-        ATTENDEE_API_BASE_URL: "https://attendee.wgsglobal.app",
-        API_BASE_URL: "https://minutesbot.wgsglobal.app",
-        ATTENDEE_API_KEY: "attendee-key",
-        AI_API_KEY: "openrouter-key"
-      },
-      "mtg_1"
-    );
-
-    expect(getBotTranscript).toHaveBeenCalledWith("bot_1");
-    expect(transcribe).toHaveBeenCalledWith(expect.any(ArrayBuffer), "audio/mp4");
-    expect(r2Put).toHaveBeenCalledWith("transcripts/mtg_1/transcript.txt", "Alex: hello", expect.any(Object));
-    expect(summaryQueue.send).toHaveBeenCalledWith({ type: "summarize", meetingId: "mtg_1" });
-  });
-
-  it("forces Attendee transcript retrieval when requested", async () => {
-    const db = new FakeD1();
-    getBotTranscript.mockResolvedValue([{ speaker_name: "Alex", transcription: "Forced from Attendee." }]);
-    getBotRecording.mockRejectedValue(new Error("Recording is not available yet"));
-
-    await fetchAndStoreTranscript(
-      {
-        DB: db as unknown as D1Database,
-        ARTIFACTS: { put: vi.fn(async () => undefined) } as unknown as R2Bucket,
-        INVITE_QUEUE: { send: vi.fn() },
-        SUMMARY_QUEUE: { send: vi.fn() },
-        EMAIL_QUEUE: { send: vi.fn() },
-        ATTENDEE_API_BASE_URL: "https://attendee.wgsglobal.app",
-        API_BASE_URL: "https://minutesbot.wgsglobal.app",
-        ATTENDEE_API_KEY: "attendee-key",
-        AI_API_KEY: "openrouter-key"
-      },
-      "mtg_1",
-      undefined,
-      undefined,
-      { forceAttendeeFetch: true }
-    );
-
-    expect(getBotTranscript).toHaveBeenCalledWith("bot_1", { force: true });
-  });
-
-  it("marks transcript failed when transcript fetching and OpenRouter transcription fail", async () => {
-    const db = new FakeD1();
-    getBotTranscript.mockResolvedValue([]);
-    getBotRecording.mockResolvedValue({ data: new Uint8Array([1, 2, 3]).buffer, contentType: "audio/mp4", sizeBytes: 3 });
-    transcribe.mockRejectedValue(new Error("STT unavailable"));
-
-    await expect(
-      fetchAndStoreTranscript(
-        {
-          DB: db as unknown as D1Database,
-          ARTIFACTS: { put: vi.fn(async () => undefined) } as unknown as R2Bucket,
-          INVITE_QUEUE: { send: vi.fn() },
-          SUMMARY_QUEUE: { send: vi.fn() },
-          EMAIL_QUEUE: { send: vi.fn() },
-          ATTENDEE_API_BASE_URL: "https://attendee.wgsglobal.app",
-          API_BASE_URL: "https://minutesbot.wgsglobal.app",
-          ATTENDEE_API_KEY: "attendee-key",
-          AI_API_KEY: "openrouter-key"
-        },
-        "mtg_1"
-      )
-    ).rejects.toThrow("STT unavailable");
-
-    expect(db.meetingUpdates.at(-1)?.[0]).toBe("failed");
-    expect(db.meetingUpdates.at(-1)?.[1]).toBe("FAILED");
+    expect(db.artifactUpdates.at(0)).toEqual(["audio/mpeg", 3, "art_1"]);
   });
 });
+
+function env(db: FakeD1, artifacts: { get: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn> }, summaryQueue: { send: ReturnType<typeof vi.fn> }): WorkflowEnv {
+  return {
+    DB: db as unknown as D1Database,
+    ARTIFACTS: artifacts as unknown as R2Bucket,
+    INVITE_QUEUE: { send: vi.fn() },
+    SUMMARY_QUEUE: summaryQueue,
+    EMAIL_QUEUE: { send: vi.fn() },
+    ATTENDEE_API_BASE_URL: "https://attendee.wgsglobal.app",
+    API_BASE_URL: "https://minutesbot.wgsglobal.app",
+    ATTENDEE_API_KEY: "attendee-key",
+    ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME: "minutesbot-artifacts",
+    AI_API_KEY: "openrouter-key"
+  };
+}
+
+function r2WithRecording(data: ArrayBuffer, contentType = "audio/mpeg") {
+  return {
+    get: vi.fn(async (key: string) => (key === "recordings/mtg_1/recording.mp3" ? r2Object(data, contentType) : null)),
+    put: vi.fn(async () => undefined)
+  };
+}
+
+function r2WithoutRecording() {
+  return {
+    get: vi.fn(async () => null),
+    put: vi.fn(async () => undefined)
+  };
+}
+
+function r2Object(data: ArrayBuffer, contentType?: string): R2ObjectBody {
+  return {
+    key: "recordings/mtg_1/recording.mp3",
+    size: data.byteLength,
+    httpMetadata: contentType ? { contentType } : undefined,
+    arrayBuffer: async () => data
+  } as R2ObjectBody;
+}
+
+function artifactKey(meetingId: unknown, type: unknown, r2Key: unknown): string {
+  return `${String(meetingId)}|${String(type)}|${String(r2Key)}`;
+}

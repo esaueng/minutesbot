@@ -19,6 +19,13 @@ export class AttendeeClient {
         ...(input.rawOverrides ?? {}),
         meeting_url: input.meetingUrl,
         bot_name: input.botName,
+        recording_settings: input.recordingSettings ? { format: input.recordingSettings.format } : undefined,
+        external_media_storage_settings: input.externalMediaStorageSettings
+          ? {
+              bucket_name: input.externalMediaStorageSettings.bucketName,
+              recording_file_name: input.externalMediaStorageSettings.recordingFileName
+            }
+          : undefined,
         webhooks: input.webhooks,
         metadata: input.metadata
       })

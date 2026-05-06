@@ -38,7 +38,30 @@ Create an Attendee API key in the Attendee deployment and configure the webhook 
 https://api.company.com/api/webhooks/attendee
 ```
 
-Attendee must be configured with the meeting platform prerequisites it requires to join Microsoft Teams meetings. minutesbot only sends meeting URLs and receives webhooks/transcripts.
+Attendee must be configured with the meeting platform prerequisites it requires to join Microsoft Teams meetings. minutesbot sends meeting URLs, receives webhooks, and processes the MP3 recording Attendee uploads to minutesbot's R2 bucket.
+
+## External Media Storage
+
+Configure Attendee External Media Storage Credentials with Cloudflare R2 S3 credentials scoped to the minutesbot artifacts bucket:
+
+```text
+Access Key ID: Cloudflare R2 access key ID
+Access Key Secret: Cloudflare R2 secret access key
+Endpoint URL: https://<account_id>.r2.cloudflarestorage.com
+Region Name: auto
+```
+
+The bucket is not entered in the Attendee credential modal. minutesbot passes the bucket and object key on each create-bot request:
+
+```json
+{
+  "recording_settings": { "format": "mp3" },
+  "external_media_storage_settings": {
+    "bucket_name": "minutesbot-artifacts",
+    "recording_file_name": "recordings/<meetingId>/recording.mp3"
+  }
+}
+```
 
 For Cloudflare Containers, use the scaffold in `deploy/attendee-container`:
 
