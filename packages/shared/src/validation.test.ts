@@ -50,6 +50,46 @@ describe("settings validation", () => {
     expect(JSON.stringify(settings)).not.toContain("sk-");
   });
 
+  it("keeps bot image storage metadata without storing image bytes in settings", () => {
+    const settings = parseSettings({
+      ...defaultSettings,
+      attendee: {
+        ...defaultSettings.attendee,
+        botImage: {
+          r2Key: "settings/attendee-bot-image.png",
+          contentType: "image/png",
+          fileName: "wgsbot.png",
+          uploadedAt: "2026-05-06T12:00:00.000Z"
+        }
+      }
+    });
+
+    expect(settings.attendee.botImage).toEqual({
+      r2Key: "settings/attendee-bot-image.png",
+      contentType: "image/png",
+      fileName: "wgsbot.png",
+      uploadedAt: "2026-05-06T12:00:00.000Z"
+    });
+    expect(JSON.stringify(settings)).not.toContain("base64");
+  });
+
+  it("rejects unsupported bot image metadata content types", () => {
+    expect(() =>
+      parseSettings({
+        ...defaultSettings,
+        attendee: {
+          ...defaultSettings.attendee,
+          botImage: {
+            r2Key: "settings/attendee-bot-image.gif",
+            contentType: "image/gif",
+            fileName: "wgsbot.gif",
+            uploadedAt: "2026-05-06T12:00:00.000Z"
+          }
+        }
+      })
+    ).toThrow();
+  });
+
   it("includes default recap settings with configurable transcription and ordered sections", () => {
     const settings = parseSettings(defaultSettings);
 

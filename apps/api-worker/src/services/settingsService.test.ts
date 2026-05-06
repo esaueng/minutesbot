@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { defaultSettings } from "@minutesbot/shared";
-import { readSettings, writeSettings } from "./settingsService";
+import { readSettings, uploadBotImage, writeSettings } from "./settingsService";
 import type { Env } from "../env";
 
 class MemoryD1 {
@@ -69,5 +69,28 @@ describe("settings service", () => {
     await expect(readSettings(testEnv)).resolves.toMatchObject({
       ai: { apiKeyConfigured: true }
     });
+  });
+
+  it("uploads bot images to R2 and persists only image metadata in settings", async () => {
+    const put = vi.fn(async () => undefined);
+    const testEnv = env({ ARTIFACTS: { put } as unknown as R2Bucket });
+
+    const settings = await uploadBotImage(testEnv, {
+      contentType: "image/png",
+      data: "AQID",
+      fileName: "wgsbot.png"
+    });
+
+    expect(put).toHaveBeenCalledWith(
+      "settings/attendee-bot-image.png",
+      new Uint8Array([1, 2, 3]),
+      expect.objectContaining({ httpMetadata: { contentType: "image/png" } })
+    );
+    expect(settings.attendee.botImage).toMatchObject({
+      r2Key: "settings/attendee-bot-image.png",
+      contentType: "image/png",
+      fileName: "wgsbot.png"
+    });
+    expect(JSON.stringify(settings)).not.toContain("AQID");
   });
 });

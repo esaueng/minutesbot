@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { AppSettings } from "@minutesbot/shared";
 import { SettingsForm } from "../components/SettingsForm";
 import { TestActionButton } from "../components/TestActionButton";
-import { ApiError, getSettings, saveSettings } from "../lib/api";
+import { ApiError, getSettings, saveSettings, uploadBotImage } from "../lib/api";
 
 export function Setup() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -44,7 +44,16 @@ export function Setup() {
         <h1>Setup</h1>
         <p>Configure the single-tenant control plane, Attendee connection, AI provider, email provider, policy, and retention.</p>
       </header>
-      <SettingsForm value={settings} onChange={setSettings} />
+      <SettingsForm
+        value={settings}
+        onBotImageUpload={async (file) => {
+          setMessage("Uploading bot image...");
+          const uploaded = await uploadBotImage(await fileToBotImageUpload(file));
+          setSettings(uploaded);
+          setMessage("Bot image uploaded");
+        }}
+        onChange={setSettings}
+      />
       <div className="actions">
         <button
           disabled={saving}
@@ -75,6 +84,17 @@ export function Setup() {
       </section>
     </div>
   );
+}
+
+export async function fileToBotImageUpload(file: File): Promise<{ contentType: string; data: string; fileName: string }> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return {
+    contentType: file.type,
+    data: btoa(binary),
+    fileName: file.name
+  };
 }
 
 export async function saveSetupSettings(

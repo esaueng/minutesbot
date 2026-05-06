@@ -42,6 +42,7 @@ export async function createMeetingBot(env: WorkflowEnv, meetingId: string): Pro
     bot = await client.createBot({
       meetingUrl: meeting.teams_join_url ?? "",
       botName: settings.attendee.botName,
+      botImage: await loadBotImage(env, settings.attendee.botImage),
       recordingSettings: { format: "mp3" },
       externalMediaStorageSettings: {
         bucketName: env.ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME,
@@ -75,6 +76,25 @@ export async function createMeetingBot(env: WorkflowEnv, meetingId: string): Pro
     status: "BOT_CREATED"
   });
   await createAuditLog(env.DB, { eventType: "bot.created", resourceType: "meeting", resourceId: meetingId, metadata: { botId: bot.id, state: bot.state } });
+}
+
+async function loadBotImage(
+  env: WorkflowEnv,
+  botImage: { r2Key: string; contentType: "image/png" | "image/jpeg" } | undefined
+): Promise<{ type: "image/png" | "image/jpeg"; data: string } | undefined> {
+  if (!botImage) return undefined;
+  const object = await env.ARTIFACTS.get(botImage.r2Key);
+  if (!object) return undefined;
+  return {
+    type: botImage.contentType,
+    data: bytesToBase64(new Uint8Array(await object.arrayBuffer()))
+  };
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
 }
 
 function secondsUntil(iso: string): number {

@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AppSettings } from "@minutesbot/shared";
 
-export function SettingsForm({ value, onChange }: { value: AppSettings; onChange: (settings: AppSettings) => void }) {
+export function SettingsForm({
+  value,
+  onBotImageUpload,
+  onChange
+}: {
+  value: AppSettings;
+  onBotImageUpload?: (file: File) => Promise<void>;
+  onChange: (settings: AppSettings) => void;
+}) {
   const timeZoneOptions = useMemo(() => getTimeZoneOptions(value.timeZone), [value.timeZone]);
   const update = (path: string, next: unknown) => {
     const clone = structuredClone(value) as AppSettings;
@@ -28,7 +36,8 @@ export function SettingsForm({ value, onChange }: { value: AppSettings; onChange
       <Field label="Attendee base URL" value={value.attendee.baseUrl} onChange={(v) => update("attendee.baseUrl", v)} />
       <ReadOnly label="Attendee API key" value={value.attendee.apiKeyConfigured ? "Configured" : "Missing"} />
       <ReadOnly label="Attendee webhook secret" value={value.attendee.webhookSecretConfigured ? "Configured" : "Missing"} />
-      <Field label="Bot display name" value={value.attendee.botName} onChange={(v) => update("attendee.botName", v)} />
+      <Field label="Teams meeting display name" value={value.attendee.botName} onChange={(v) => update("attendee.botName", v)} />
+      <BotImageField value={value} onUpload={onBotImageUpload} />
       <NumberField label="Create bot minutes before start" value={value.attendee.createBotMinutesBeforeStart} onChange={(v) => update("attendee.createBotMinutesBeforeStart", v)} />
       <NumberField label="Max waiting room minutes" value={value.attendee.maxWaitingRoomMinutes} onChange={(v) => update("attendee.maxWaitingRoomMinutes", v)} />
       <Checkbox label="Delete Attendee data after transcript fetch" checked={value.attendee.deleteAttendeeDataAfterTranscriptFetch} onChange={(v) => update("attendee.deleteAttendeeDataAfterTranscriptFetch", v)} />
@@ -150,6 +159,41 @@ function ReadOnly({ label, value }: { label: string; value: string }) {
     <label>
       <span>{label}</span>
       <input value={value} readOnly />
+    </label>
+  );
+}
+
+function BotImageField({ value, onUpload }: { value: AppSettings; onUpload?: (file: File) => Promise<void> }) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const botImage = value.attendee.botImage;
+
+  return (
+    <label>
+      <span>Teams background image</span>
+      <input
+        accept="image/png,image/jpeg"
+        disabled={!onUpload || uploading}
+        type="file"
+        onChange={async (event) => {
+          const file = event.target.files?.[0];
+          if (!file || !onUpload) return;
+          setUploading(true);
+          setError("");
+          try {
+            await onUpload(file);
+            event.target.value = "";
+          } catch (uploadError) {
+            setError(uploadError instanceof Error ? uploadError.message : "Upload failed");
+          } finally {
+            setUploading(false);
+          }
+        }}
+      />
+      <span className="fieldHelp">
+        {uploading ? "Uploading..." : botImage ? `${botImage.fileName ?? "Uploaded image"} will be sent with new Teams bots.` : "Upload a PNG or JPEG for new Teams bots."}
+      </span>
+      {error && <span className="fieldError">{error}</span>}
     </label>
   );
 }

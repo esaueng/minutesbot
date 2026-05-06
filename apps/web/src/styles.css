@@ -139,6 +139,12 @@ input::placeholder, textarea::placeholder {
   line-height: 1.35;
 }
 
+.fieldError {
+  color: #fca5a5;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .timeZoneField {
   min-width: 0;
 }

@@ -8,7 +8,9 @@ describe("AttendeeClient", () => {
   });
 
   it("creates bots with token auth and normalized payload", async () => {
-    const fetcher = vi.fn(async () => Response.json({ id: "bot_1", meeting_url: "https://teams.microsoft.com/l/meetup-join/x", state: "created" }));
+    const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      Response.json({ id: "bot_1", meeting_url: "https://teams.microsoft.com/l/meetup-join/x", state: "created" })
+    );
     const client = new AttendeeClient({ baseUrl: "https://attendee.company.com/", apiKey: "secret", fetcher });
 
     const bot = await client.createBot({
@@ -53,6 +55,30 @@ describe("AttendeeClient", () => {
       external_media_storage_settings: {
         bucket_name: "minutesbot-artifacts",
         recording_file_name: "recordings/mtg_1/recording.mp3"
+      }
+    });
+  });
+
+  it("serializes custom bot images when creating bots", async () => {
+    const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      Response.json({ id: "bot_1", meeting_url: "https://teams.microsoft.com/l/meetup-join/x", state: "created" })
+    );
+    const client = new AttendeeClient({ baseUrl: "https://attendee.company.com/", apiKey: "secret", fetcher });
+
+    await client.createBot({
+      meetingUrl: "https://teams.microsoft.com/l/meetup-join/x",
+      botName: "WGS Bot",
+      botImage: {
+        type: "image/png",
+        data: "iVBORw0KGgo="
+      }
+    });
+
+    expect(JSON.parse(fetcher.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      bot_name: "WGS Bot",
+      bot_image: {
+        type: "image/png",
+        data: "iVBORw0KGgo="
       }
     });
   });

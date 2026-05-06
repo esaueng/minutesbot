@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultSettings, type AppSettings } from "@minutesbot/shared";
 import { getTimeZoneOptions, parseAllowedDomains } from "../components/SettingsForm";
-import { saveSetupSettings } from "./Setup";
+import { fileToBotImageUpload, saveSetupSettings } from "./Setup";
 
 describe("setup save status", () => {
   it("returns saved settings with a visible saved message", async () => {
@@ -37,5 +37,17 @@ describe("allowed domains parsing", () => {
 describe("time zone options", () => {
   it("keeps the configured time zone selectable", () => {
     expect(getTimeZoneOptions("America/Detroit")).toContain("America/Detroit");
+  });
+});
+
+describe("bot image upload", () => {
+  it("converts uploaded PNG files into base64 API input", async () => {
+    const file = new File([new Uint8Array([1, 2, 3])], "wgsbot.png", { type: "image/png" });
+
+    await expect(fileToBotImageUpload(file)).resolves.toEqual({
+      contentType: "image/png",
+      data: "AQID",
+      fileName: "wgsbot.png"
+    });
   });
 });

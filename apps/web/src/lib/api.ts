@@ -43,6 +43,10 @@ export async function saveSettings(settings: AppSettings): Promise<AppSettings> 
   return apiPut<AppSettings>("/api/settings", settings);
 }
 
+export async function uploadBotImage(input: { contentType: string; data: string; fileName: string }): Promise<AppSettings> {
+  return apiPost<AppSettings>("/api/settings/bot-image", input);
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = authTokenProvider ? await authTokenProvider() : null;
   const response = await fetch(`${API_BASE}${path}`, {

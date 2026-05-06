@@ -16,6 +16,13 @@ const timeZoneSchema = z
   .min(1)
   .refine((value) => isValidTimeZone(value), "Invalid time zone");
 
+const botImageSchema = z.object({
+  r2Key: z.string().trim().min(1),
+  contentType: z.enum(["image/png", "image/jpeg"]),
+  fileName: z.string().trim().min(1).max(255).optional(),
+  uploadedAt: z.string().trim().datetime()
+});
+
 export const recapSectionKeys = ["summary", "decisions", "actionItems", "openQuestions", "risks", "followUps"] as const;
 export type RecapSectionKey = (typeof recapSectionKeys)[number];
 export const recapTemplateKeys = ["weekly_spqrc", "weekly_sales", "plant_meeting", "general"] as const;
@@ -98,6 +105,7 @@ export const appSettingsSchema = z.object({
     createBotMinutesBeforeStart: z.number().int().min(0).max(180),
     maxWaitingRoomMinutes: z.number().int().min(1).max(240),
     deleteAttendeeDataAfterTranscriptFetch: z.boolean(),
+    botImage: botImageSchema.optional(),
     botPayloadOverridesJson: z.string().optional()
   }),
   ai: z.object({

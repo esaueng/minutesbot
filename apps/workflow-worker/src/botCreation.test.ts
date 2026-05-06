@@ -42,6 +42,17 @@ class BotCreationD1 {
   }
 }
 
+class BotImageR2 {
+  constructor(private readonly image: Uint8Array) {}
+
+  async get(key: string) {
+    if (key !== "settings/attendee-bot-image.png") return null;
+    return {
+      arrayBuffer: async () => this.image.buffer.slice(this.image.byteOffset, this.image.byteOffset + this.image.byteLength)
+    };
+  }
+}
+
 function env(overrides: Partial<WorkflowEnv> = {}, db = new BotCreationD1()): WorkflowEnv {
   return {
     DB: db as unknown as D1Database,
@@ -61,6 +72,43 @@ function env(overrides: Partial<WorkflowEnv> = {}, db = new BotCreationD1()): Wo
 describe("createMeetingBot failure handling", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("adds the uploaded bot image and configured Teams display name to Attendee bot creation", async () => {
+    const db = new BotCreationD1();
+    db.settings = {
+      ...defaultSettings,
+      attendee: {
+        ...defaultSettings.attendee,
+        botName: "WGS Meeting Assistant",
+        botImage: {
+          r2Key: "settings/attendee-bot-image.png",
+          contentType: "image/png",
+          fileName: "wgsbot.png",
+          uploadedAt: "2026-05-06T12:00:00.000Z"
+        }
+      }
+    };
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        requests.push({ url: String(url), init });
+        if (String(url).endsWith("/_ops/health")) return Response.json({ ok: true, runtime: "cloudflare-containers", missing: [] });
+        return Response.json({ id: "bot_1", meeting_url: "https://teams.microsoft.com/l/meetup-join/abc", state: "joining" }, { status: 201 });
+      })
+    );
+
+    await createMeetingBot(env({ ARTIFACTS: new BotImageR2(new Uint8Array([1, 2, 3])) as unknown as R2Bucket }, db), "mtg_1");
+
+    const createRequest = requests.find((request) => request.url.endsWith("/api/v1/bots"));
+    expect(JSON.parse(createRequest?.init?.body as string)).toMatchObject({
+      bot_name: "WGS Meeting Assistant",
+      bot_image: {
+        type: "image/png",
+        data: "AQID"
+      }
+    });
   });
 
   it("creates Attendee bots with MP3 recording upload to R2", async () => {

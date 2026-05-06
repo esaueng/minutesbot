@@ -15,6 +15,10 @@ export type CreateAttendeeBotInput = {
   recordingSettings?: {
     format: "mp3" | "mp4" | "webm";
   };
+  botImage?: {
+    type: "image/png" | "image/jpeg";
+    data: string;
+  };
   externalMediaStorageSettings?: {
     bucketName: string;
     recordingFileName?: string;
