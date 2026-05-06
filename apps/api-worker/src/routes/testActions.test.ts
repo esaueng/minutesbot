@@ -98,4 +98,41 @@ describe("admin test actions", () => {
     expect(requests[0].url).toBe("https://api.openai.com/v1/chat/completions");
     expect(requests[0].init?.headers).toMatchObject({ authorization: "Bearer sk-secret" });
   });
+
+  it("calls Attendee when testing Attendee auth without returning the secret", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        requests.push({ url: String(url), init });
+        return Response.json({ id: "bot_1", meeting_url: "https://teams.microsoft.com/l/meetup-join/test", state: "ready" });
+      })
+    );
+
+    const response = await post("/api/admin/test-attendee", env({ ATTENDEE_API_KEY: "attendee-secret" }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      message: "Attendee API connection succeeded",
+      attendee: {
+        baseUrl: defaultSettings.attendee.baseUrl
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests[0].url).toBe(`${defaultSettings.attendee.baseUrl}/api/v1/bots/minutesbot-preflight`);
+    expect(requests[0].init?.headers).toMatchObject({ authorization: "Token attendee-secret" });
+  });
+
+  it("returns a redacted Attendee auth failure", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("nope attendee-secret", { status: 401 })));
+
+    const response = await post("/api/admin/test-attendee", env({ ATTENDEE_API_KEY: "attendee-secret" }));
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      message: "ATTENDEE_AUTH_FAILED: Attendee request failed with 401"
+    });
+  });
 });

@@ -1,4 +1,4 @@
-import { AttendeeClient } from "@minutesbot/attendee-client";
+import { AttendeeClient, AttendeeClientError, type AttendeeBot } from "@minutesbot/attendee-client";
 import { createAuditLog, getMeeting, getSettings, updateMeetingBotState, updateMeetingStatus } from "@minutesbot/db";
 import { AppError, minutesBefore } from "@minutesbot/shared";
 import type { WorkflowEnv } from "./env";
@@ -31,19 +31,32 @@ export async function createMeetingBot(env: WorkflowEnv, meetingId: string): Pro
   await updateMeetingStatus(env.DB, meetingId, "BOT_CREATE_QUEUED");
   await createAuditLog(env.DB, { eventType: "bot.create_queued", resourceType: "meeting", resourceId: meetingId });
 
-  if (!env.ATTENDEE_API_KEY) throw new AppError("ATTENDEE_API_KEY_MISSING", "ATTENDEE_API_KEY secret is not configured", 500);
-  const client = new AttendeeClient({ baseUrl: settings.attendee.baseUrl || env.ATTENDEE_API_BASE_URL, apiKey: env.ATTENDEE_API_KEY });
-  const bot = await client.createBot({
-    meetingUrl: meeting.teams_join_url ?? "",
-    botName: settings.attendee.botName,
-    webhooks: [
-      {
-        url: `${env.API_BASE_URL}/api/webhooks/attendee`,
-        triggers: ["bot.state_change", "transcript.update", "bot_logs.update", "participant_events.join_leave"]
-      }
-    ],
-    metadata: { minutesbot_meeting_id: meeting.id, calendar_uid: meeting.calendar_uid }
-  });
+  let bot: AttendeeBot;
+  try {
+    if (!env.ATTENDEE_API_KEY) throw new AppError("ATTENDEE_API_KEY_MISSING", "ATTENDEE_API_KEY secret is not configured", 500);
+    const client = new AttendeeClient({ baseUrl: settings.attendee.baseUrl || env.ATTENDEE_API_BASE_URL, apiKey: env.ATTENDEE_API_KEY });
+    bot = await client.createBot({
+      meetingUrl: meeting.teams_join_url ?? "",
+      botName: settings.attendee.botName,
+      webhooks: [
+        {
+          url: `${env.API_BASE_URL}/api/webhooks/attendee`,
+          triggers: ["bot.state_change", "transcript.update", "bot_logs.update", "participant_events.join_leave"]
+        }
+      ],
+      metadata: { minutesbot_meeting_id: meeting.id, calendar_uid: meeting.calendar_uid }
+    });
+  } catch (error) {
+    const failure = botCreationFailure(error);
+    await updateMeetingStatus(env.DB, meetingId, "FAILED", failure.latestError);
+    await createAuditLog(env.DB, {
+      eventType: "bot.fatal_error",
+      resourceType: "meeting",
+      resourceId: meetingId,
+      metadata: failure.auditMetadata
+    });
+    throw error;
+  }
 
   await updateMeetingBotState(env.DB, meetingId, {
     botId: bot.id,
@@ -57,4 +70,24 @@ export async function createMeetingBot(env: WorkflowEnv, meetingId: string): Pro
 
 function secondsUntil(iso: string): number {
   return Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 1000));
+}
+
+function botCreationFailure(error: unknown): { latestError: string; auditMetadata: Record<string, unknown> } {
+  if (error instanceof AttendeeClientError) {
+    return {
+      latestError: `${error.code}: ${error.message}`,
+      auditMetadata: { code: error.code, status: error.status, retryable: error.retryable }
+    };
+  }
+  if (error instanceof AppError) {
+    return {
+      latestError: `${error.code}: ${error.message}`,
+      auditMetadata: { code: error.code }
+    };
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    latestError: `ATTENDEE_CREATE_FAILED: ${message}`,
+    auditMetadata: { code: "ATTENDEE_CREATE_FAILED", message }
+  };
 }

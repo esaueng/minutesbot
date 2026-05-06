@@ -31,6 +31,12 @@ export function MeetingDetail({ id }: { id: string }) {
       </section>
       <RecipientEligibilityTable attendees={(data.attendees as Array<Record<string, unknown>>) ?? []} />
       <AttendeeStatePanel meeting={meeting} />
+      {meeting.latest_error ? (
+        <section>
+          <h2>Latest error</h2>
+          <div className="errorPanel">{String(meeting.latest_error)}</div>
+        </section>
+      ) : null}
       <TableSection title="Transcript segments" rows={(data.transcriptSegments as Array<Record<string, unknown>>) ?? []} />
       <TableSection title="Artifacts" rows={(data.artifacts as Array<Record<string, unknown>>) ?? []} />
       <TableSection title="Webhook events" rows={(data.webhookEvents as Array<Record<string, unknown>>) ?? []} />

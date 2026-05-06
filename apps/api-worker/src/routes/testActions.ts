@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { AttendeeClient } from "@minutesbot/attendee-client";
+import { AttendeeClient, AttendeeClientError } from "@minutesbot/attendee-client";
 import { parseIncomingInvite } from "@minutesbot/invite-parser";
 import { renderSummaryEmail } from "@minutesbot/email-renderer";
 import { createOpenAiCompatibleProvider } from "@minutesbot/summary-engine";
@@ -52,7 +52,18 @@ export const testActionsRoute = new Hono<{ Bindings: Env }>()
     const settings = await readSettings(c.env);
     if (!c.env.ATTENDEE_API_KEY) return c.json({ ok: false, message: "ATTENDEE_API_KEY secret is not configured" }, 400);
     const client = new AttendeeClient({ baseUrl: settings.attendee.baseUrl, apiKey: c.env.ATTENDEE_API_KEY });
-    return c.json({ ok: true, preview: { clientBaseUrl: settings.attendee.baseUrl, createBotPayload: { meeting_url: "<teams-url>", bot_name: settings.attendee.botName } } });
+    try {
+      await client.getBot("minutesbot-preflight");
+    } catch (error) {
+      if (!(error instanceof AttendeeClientError && error.code === "ATTENDEE_NOT_FOUND")) {
+        return c.json({ ok: false, message: attendeeTestErrorMessage(error) }, 502);
+      }
+    }
+    return c.json({
+      ok: true,
+      message: "Attendee API connection succeeded",
+      attendee: { baseUrl: settings.attendee.baseUrl }
+    });
   })
   .post("/test-ai", async (c) => {
     const settings = await readSettings(c.env);
@@ -92,3 +103,8 @@ export const testActionsRoute = new Hono<{ Bindings: Env }>()
   .post("/verify-webhook-signature-sample", async (c) =>
     c.json({ ok: true, message: "Use ATTENDEE_WEBHOOK_SECRET and X-Webhook-Signature against /api/webhooks/attendee for live verification" })
   );
+
+function attendeeTestErrorMessage(error: unknown): string {
+  if (error instanceof AttendeeClientError) return `${error.code}: ${error.message}`;
+  return `ATTENDEE_REQUEST_FAILED: ${error instanceof Error ? error.message : String(error)}`;
+}
