@@ -33,7 +33,7 @@ export async function handleInvite(message: Pick<EmailMessage, "from" | "to" | "
   try {
     parsed = parseIncomingInvite(rawEmail);
   } catch (error) {
-    await rejectInvite(env, message, "REJECTED_PARSE_ERROR", error instanceof Error ? error.message : "Parse error");
+    await ignoreInvite(env, message, "REJECTED_PARSE_ERROR", error instanceof Error ? error.message : "Parse error");
     return;
   }
 
@@ -123,8 +123,16 @@ export async function handleInvite(message: Pick<EmailMessage, "from" | "to" | "
 
 async function rejectInvite(env: Env, message: Pick<EmailMessage, "from" | "setReject">, status: MeetingStatus, reason: string): Promise<void> {
   message.setReject(reason);
+  await recordRejectedInvite(env, message.from, status, reason);
+}
+
+async function ignoreInvite(env: Env, message: Pick<EmailMessage, "from">, status: MeetingStatus, reason: string): Promise<void> {
+  await recordRejectedInvite(env, message.from, status, reason);
+}
+
+async function recordRejectedInvite(env: Env, actorEmail: string, status: MeetingStatus, reason: string): Promise<void> {
   await createAuditLog(env.DB, {
-    actorEmail: message.from,
+    actorEmail,
     eventType: "invite.rejected",
     resourceType: "invite",
     resourceId: createId("rej"),

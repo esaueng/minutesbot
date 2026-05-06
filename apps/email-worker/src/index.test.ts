@@ -21,6 +21,29 @@ class FakeD1 {
 }
 
 describe("email worker invite handling", () => {
+  it("accepts non-calendar test emails without an SMTP rejection", async () => {
+    const setReject = vi.fn();
+    const queueInvite = vi.fn(async () => undefined);
+    const env = {
+      DB: new FakeD1() as unknown as D1Database,
+      ARTIFACTS: { put: vi.fn(async () => undefined) } as unknown as R2Bucket,
+      INVITE_QUEUE: { send: queueInvite }
+    };
+
+    await handleInvite(
+      { from: "p.gustafson@wgsglobalservices.com", to: "notetaker@wgs.bot", setReject },
+      env,
+      `From: Peter <p.gustafson@wgsglobalservices.com>
+To: notetaker@wgs.bot
+Subject: TEST
+
+hello`
+    );
+
+    expect(setReject).not.toHaveBeenCalled();
+    expect(queueInvite).not.toHaveBeenCalled();
+  });
+
   it("rejects wrong recorder recipient", async () => {
     const setReject = vi.fn();
     const env = {
