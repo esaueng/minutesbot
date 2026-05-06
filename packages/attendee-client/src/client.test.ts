@@ -1,8 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { stableStringify } from "@minutesbot/shared";
 import { AttendeeClient, verifyAttendeeWebhookSignature } from "./index";
 
 describe("AttendeeClient", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("creates bots with token auth and normalized payload", async () => {
     const fetcher = vi.fn(async () => Response.json({ id: "bot_1", meeting_url: "https://teams.microsoft.com/l/meetup-join/x", state: "created" }));
     const client = new AttendeeClient({ baseUrl: "https://attendee.company.com/", apiKey: "secret", fetcher });
@@ -29,6 +33,19 @@ describe("AttendeeClient", () => {
     const client = new AttendeeClient({ baseUrl: "https://attendee.company.com", apiKey: "secret", fetcher });
 
     await expect(client.getBot("bot_1")).rejects.toMatchObject({ code: "ATTENDEE_RATE_LIMITED", retryable: true });
+  });
+
+  it("calls default global fetch with a valid host receiver", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async function (this: unknown, _url: string | URL | Request, _init?: RequestInit) {
+        if (this !== globalThis) throw new TypeError("Illegal invocation");
+        return Response.json({ id: "bot_1", meeting_url: "https://teams.microsoft.com/l/meetup-join/x", state: "created" });
+      })
+    );
+    const client = new AttendeeClient({ baseUrl: "https://attendee.company.com", apiKey: "secret" });
+
+    await expect(client.getBot("bot_1")).resolves.toMatchObject({ id: "bot_1" });
   });
 });
 

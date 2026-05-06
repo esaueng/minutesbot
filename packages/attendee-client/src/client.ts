@@ -9,7 +9,7 @@ export class AttendeeClient {
   constructor(options: AttendeeClientOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
     this.apiKey = options.apiKey;
-    this.fetcher = options.fetcher ?? fetch;
+    this.fetcher = options.fetcher ?? ((input, init) => globalThis.fetch(input, init));
   }
 
   async createBot(input: CreateAttendeeBotInput): Promise<AttendeeBot> {
