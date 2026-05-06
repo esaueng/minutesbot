@@ -29,7 +29,7 @@ export const meetingsRoute = new Hono<{ Bindings: Env }>()
   .post("/:id/retry-bot", async (c) => {
     const id = c.req.param("id");
     await updateMeetingStatus(c.env.DB, id, "BOT_CREATE_QUEUED");
-    await c.env.MEETING_WORKFLOW.create({ id: `meeting-${id}-${Date.now()}`, params: { meetingId: id } });
+    await c.env.INVITE_QUEUE.send({ type: "create_bot", meetingId: id });
     return c.json({ ok: true });
   })
   .post("/:id/retry-summary", async (c) => {

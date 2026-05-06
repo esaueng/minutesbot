@@ -57,13 +57,6 @@
       { "queue": "minutesbot-email", "max_batch_size": 10 }
     ]
   },
-  "workflows": [
-    {
-      "name": "minutesbot-meeting-workflow",
-      "binding": "MEETING_WORKFLOW",
-      "class_name": "MeetingWorkflow"
-    }
-  ],
   "send_email": [
     {
       "name": "SEND_EMAIL",
@@ -112,13 +105,6 @@
           { "queue": "minutesbot-staging-email", "max_batch_size": 10 }
         ]
       },
-      "workflows": [
-        {
-          "name": "minutesbot-staging-meeting-workflow",
-          "binding": "MEETING_WORKFLOW",
-          "class_name": "MeetingWorkflow"
-        }
-      ],
       "send_email": [
         {
           "name": "SEND_EMAIL",
@@ -171,13 +157,6 @@
           { "queue": "minutesbot-email", "max_batch_size": 10 }
         ]
       },
-      "workflows": [
-        {
-          "name": "minutesbot-meeting-workflow",
-          "binding": "MEETING_WORKFLOW",
-          "class_name": "MeetingWorkflow"
-        }
-      ],
       "send_email": [
         {
           "name": "SEND_EMAIL",

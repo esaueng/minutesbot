@@ -38,7 +38,6 @@ function env(overrides: Partial<Env> = {}): Env {
     INVITE_QUEUE: { send: async () => undefined },
     SUMMARY_QUEUE: { send: async () => undefined },
     EMAIL_QUEUE: { send: async () => undefined },
-    MEETING_WORKFLOW: { create: async () => ({}) },
     APP_BASE_URL: "https://minutesbot.example.com",
     API_BASE_URL: "https://minutesbot.example.com",
     ATTENDEE_API_BASE_URL: "https://attendee.example.com",

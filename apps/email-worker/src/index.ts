@@ -6,7 +6,7 @@ import { createId, type MeetingStatus } from "@minutesbot/shared";
 type Env = {
   DB: D1Database;
   ARTIFACTS: R2Bucket;
-  MEETING_WORKFLOW: { create(options: { id?: string; params?: unknown }): Promise<unknown> };
+  INVITE_QUEUE: { send(message: unknown): Promise<void> };
 };
 
 type EmailMessage = {
@@ -117,7 +117,7 @@ export async function handleInvite(message: Pick<EmailMessage, "from" | "to" | "
     return;
   }
 
-  await env.MEETING_WORKFLOW.create({ id: `meeting-${meeting.id}`, params: { meetingId: meeting.id } });
+  await env.INVITE_QUEUE.send({ type: "create_bot", meetingId: meeting.id });
   await createAuditLog(env.DB, { actorEmail: parsed.organizer.email, eventType: "meeting.scheduled", resourceType: "meeting", resourceId: meeting.id });
 }
 

@@ -1,6 +1,7 @@
 export type WorkflowEnv = {
   DB: D1Database;
   ARTIFACTS: R2Bucket;
+  INVITE_QUEUE: { send(message: unknown, options?: { delaySeconds?: number }): Promise<void> };
   SUMMARY_QUEUE: { send(message: unknown): Promise<void> };
   EMAIL_QUEUE: { send(message: unknown): Promise<void> };
   ATTENDEE_API_KEY?: string;

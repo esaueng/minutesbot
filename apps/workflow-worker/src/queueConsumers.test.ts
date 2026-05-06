@@ -29,6 +29,7 @@ describe("retention cleanup", () => {
     await cleanupOldArtifacts({
       DB: db as unknown as D1Database,
       ARTIFACTS: { delete: deleteObject } as unknown as R2Bucket,
+      INVITE_QUEUE: { send: vi.fn() },
       SUMMARY_QUEUE: { send: vi.fn() },
       EMAIL_QUEUE: { send: vi.fn() },
       ATTENDEE_API_BASE_URL: "https://attendee.company.com",

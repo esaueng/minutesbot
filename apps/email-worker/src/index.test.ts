@@ -26,7 +26,7 @@ describe("email worker invite handling", () => {
     const env = {
       DB: new FakeD1() as unknown as D1Database,
       ARTIFACTS: { put: vi.fn(async () => undefined) } as unknown as R2Bucket,
-      MEETING_WORKFLOW: { create: vi.fn(async () => undefined) }
+      INVITE_QUEUE: { send: vi.fn(async () => undefined) }
     };
 
     await handleInvite(
@@ -54,11 +54,11 @@ END:VCALENDAR`
 
   it("uses the envelope recipient for forwarded Teams invites", async () => {
     const setReject = vi.fn();
-    const createWorkflow = vi.fn(async () => undefined);
+    const queueInvite = vi.fn(async () => undefined);
     const env = {
       DB: new FakeD1() as unknown as D1Database,
       ARTIFACTS: { put: vi.fn(async () => undefined) } as unknown as R2Bucket,
-      MEETING_WORKFLOW: { create: createWorkflow }
+      INVITE_QUEUE: { send: queueInvite }
     };
 
     await handleInvite(
@@ -82,6 +82,6 @@ END:VCALENDAR`
     );
 
     expect(setReject).not.toHaveBeenCalled();
-    expect(createWorkflow).toHaveBeenCalledWith(expect.objectContaining({ id: expect.stringMatching(/^meeting-/) }));
+    expect(queueInvite).toHaveBeenCalledWith(expect.objectContaining({ type: "create_bot", meetingId: expect.stringMatching(/^mtg_/) }));
   });
 });

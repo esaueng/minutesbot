@@ -1,9 +1,5 @@
 export type QueueBinding<T = unknown> = {
-  send(message: T): Promise<void>;
-};
-
-export type WorkflowBinding<T = unknown> = {
-  create(options: { id?: string; params?: T }): Promise<unknown>;
+  send(message: T, options?: { delaySeconds?: number }): Promise<void>;
 };
 
 export type Env = {
@@ -12,7 +8,6 @@ export type Env = {
   INVITE_QUEUE: QueueBinding;
   SUMMARY_QUEUE: QueueBinding;
   EMAIL_QUEUE: QueueBinding;
-  MEETING_WORKFLOW: WorkflowBinding;
   SEND_EMAIL?: { send: (message: unknown) => Promise<unknown> };
   APP_BASE_URL: string;
   API_BASE_URL: string;

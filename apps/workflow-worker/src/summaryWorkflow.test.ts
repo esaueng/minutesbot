@@ -89,6 +89,7 @@ describe("summary workflow", () => {
           get: vi.fn(async () => ({ text: async () => "Alex: hello" })),
           put: vi.fn(async () => undefined)
         } as unknown as R2Bucket,
+        INVITE_QUEUE: { send: vi.fn() },
         SUMMARY_QUEUE: { send: vi.fn() },
         EMAIL_QUEUE: { send: vi.fn() },
         ATTENDEE_API_BASE_URL: "https://attendee.wgsglobal.app",

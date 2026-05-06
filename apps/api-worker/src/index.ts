@@ -14,8 +14,8 @@ import { adminTokenAuthMiddleware } from "./middleware/auth";
 import { cleanupOldArtifacts, handleQueueBatch } from "../../workflow-worker/src/queueConsumers";
 import emailWorker from "../../email-worker/src/index";
 
-export { MeetingWorkflow } from "../../workflow-worker/src/meetingWorkflow";
 export { CleanupWorkflow } from "../../workflow-worker/src/cleanupWorkflow";
+export { MeetingWorkflow } from "../../workflow-worker/src/meetingWorkflow";
 export { SummaryWorkflow } from "../../workflow-worker/src/summaryWorkflow";
 export { TranscriptWorkflow } from "../../workflow-worker/src/transcriptWorkflow";
 

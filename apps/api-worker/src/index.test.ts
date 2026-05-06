@@ -59,7 +59,7 @@ ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@wgs.bot
 DESCRIPTION:https://teams.microsoft.com/l/meetup-join/19%3atest%40thread.v2/0?context=%7b%7d
 END:VEVENT
 END:VCALENDAR`;
-    const createWorkflow = vi.fn(async () => undefined);
+    const queueInvite = vi.fn(async () => undefined);
     const waitUntil = vi.fn((promise: Promise<unknown>) => promise);
 
     await entrypoint.default.email(
@@ -72,12 +72,12 @@ END:VCALENDAR`;
       {
         DB: new FakeD1() as unknown as D1Database,
         ARTIFACTS: { put: vi.fn(async () => undefined) } as unknown as R2Bucket,
-        MEETING_WORKFLOW: { create: createWorkflow }
+        INVITE_QUEUE: { send: queueInvite }
       },
       { waitUntil } as unknown as ExecutionContext
     );
 
     await waitUntil.mock.calls[0][0];
-    expect(createWorkflow).toHaveBeenCalledOnce();
+    expect(queueInvite).toHaveBeenCalledOnce();
   });
 });
