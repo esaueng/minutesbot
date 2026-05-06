@@ -1,8 +1,8 @@
-import { createAuditLog, createEmailDelivery, createSummary, getMeeting, getSettings, listArtifacts, listMeetingAttendees, updateSummaryStatus } from "@minutesbot/db";
+import { createAuditLog, createEmailDelivery, createSummary, getMeeting, getSettings, listArtifacts, listMeetingAttendees, listTranscriptSegments, updateSummaryStatus } from "@minutesbot/db";
 import { renderSummaryEmail } from "@minutesbot/email-renderer";
 import { buildSummaryRecipients } from "@minutesbot/recipient-policy";
 import { createOpenAiCompatibleProvider, summarizeTranscript } from "@minutesbot/summary-engine";
-import { AppError } from "@minutesbot/shared";
+import { AppError, createTranscriptDownloadToken } from "@minutesbot/shared";
 import { createEmailProvider } from "@minutesbot/email-sender";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
@@ -33,6 +33,9 @@ export async function generateAndSendSummary(
 
   await updateSummaryStatus(env.DB, meetingId, "generating");
   const attendees = await listMeetingAttendees(env.DB, meetingId);
+  const transcriptSegments = await listTranscriptSegments(env.DB, meetingId);
+  const transcriptMetrics = calculateTranscriptMetrics(transcriptText, transcriptSegments);
+  const meetingDurationMinutes = calculateMeetingDurationMinutes(meeting.start_time ?? undefined, meeting.end_time ?? undefined);
   const provider = createOpenAiCompatibleProvider({
     baseUrl: settings.ai.baseUrl || "https://api.openai.com/v1",
     apiKey: env.AI_API_KEY ?? "",
@@ -43,12 +46,19 @@ export async function generateAndSendSummary(
       {
         meetingSubject: meeting.subject ?? "Untitled meeting",
         meetingStartTime: meeting.start_time ?? undefined,
+        meetingEndTime: meeting.end_time ?? undefined,
+        meetingDurationMinutes,
+        transcriptDurationMinutes: transcriptMetrics.transcriptDurationMinutes,
+        speakerTurnCount: transcriptMetrics.speakerTurnCount,
+        wordCount: transcriptMetrics.wordCount,
         organizerEmail: meeting.organizer_email ?? undefined,
         attendees: attendees.map((attendee) => ({ email: attendee.email, name: attendee.name ?? undefined })),
         transcriptText,
         prompt: settings.recap.prompt,
         classificationEnabled: settings.recap.classificationEnabled,
-        defaultTemplate: settings.recap.defaultTemplate
+        defaultTemplate: settings.recap.defaultTemplate,
+        shortMeetingBriefRecapEnabled: settings.recap.shortMeetingBriefRecapEnabled,
+        shortMeetingDurationThresholdMinutes: settings.recap.shortMeetingDurationThresholdMinutes
       },
       provider
     )
@@ -75,6 +85,7 @@ export async function generateAndSendSummary(
     subject: meeting.subject ?? "Untitled meeting",
     date: meeting.start_time ?? undefined,
     summary,
+    transcriptDownloadUrl: await buildTranscriptDownloadUrl(env, meetingId),
     excludedRecipients: filtered.excluded.map((recipient) => recipient.email),
     recap: {
       subjectPrefix: settings.recap.subjectPrefix,
@@ -116,4 +127,35 @@ export async function generateAndSendSummary(
   }
   await updateSummaryStatus(env.DB, meetingId, "sent", "SUMMARY_SENT");
   await createAuditLog(env.DB, { eventType: "summary.sent", resourceType: "meeting", resourceId: meetingId, metadata: { recipients: sentCount } });
+}
+
+function calculateMeetingDurationMinutes(start?: string, end?: string): number | undefined {
+  if (!start || !end) return undefined;
+  const startMs = Date.parse(start);
+  const endMs = Date.parse(end);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return undefined;
+  return Math.round((endMs - startMs) / 60_000);
+}
+
+function calculateTranscriptMetrics(transcriptText: string, segments: Array<Record<string, unknown>>): { wordCount: number; speakerTurnCount: number; transcriptDurationMinutes?: number } {
+  const wordCount = transcriptText.trim().split(/\s+/).filter(Boolean).length;
+  const meaningfulSegments = segments.filter((segment) => typeof segment.text === "string" && segment.text.trim());
+  const speakerTurnCount = meaningfulSegments.length > 0 ? meaningfulSegments.length : transcriptText.split(/\n+/).filter((line) => line.trim()).length || (transcriptText.trim() ? 1 : 0);
+  const timedSegments = meaningfulSegments
+    .map((segment) => ({
+      timestampMs: typeof segment.timestamp_ms === "number" ? segment.timestamp_ms : undefined,
+      durationMs: typeof segment.duration_ms === "number" ? segment.duration_ms : 0
+    }))
+    .filter((segment): segment is { timestampMs: number; durationMs: number } => segment.timestampMs !== undefined);
+  if (timedSegments.length === 0) return { wordCount, speakerTurnCount };
+  const first = Math.min(...timedSegments.map((segment) => segment.timestampMs));
+  const last = Math.max(...timedSegments.map((segment) => segment.timestampMs + segment.durationMs));
+  return { wordCount, speakerTurnCount, transcriptDurationMinutes: Math.round(((last - first) / 60_000) * 10) / 10 };
+}
+
+async function buildTranscriptDownloadUrl(env: WorkflowEnv, meetingId: string): Promise<string | undefined> {
+  if (!env.SESSION_SECRET || !env.API_BASE_URL) return undefined;
+  const expiresAt = Date.now() + 14 * 24 * 60 * 60 * 1000;
+  const token = await createTranscriptDownloadToken({ meetingId, artifactType: "transcript_text", expiresAt }, env.SESSION_SECRET);
+  return `${env.API_BASE_URL.replace(/\/+$/, "")}/api/artifacts/${encodeURIComponent(meetingId)}/transcript.txt?token=${encodeURIComponent(token)}`;
 }

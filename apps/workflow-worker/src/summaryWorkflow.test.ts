@@ -13,6 +13,9 @@ vi.mock("@minutesbot/summary-engine", () => ({
   },
   summarizeTranscript: vi.fn(async () => ({
     meetingType: "general",
+    recapDepth: "standard",
+    meetingNotes: [],
+    followUpTasks: [],
     summary: ["Summary ready."],
     decisions: [],
     actionItems: [],
@@ -40,7 +43,8 @@ class FakeD1 {
             subject: "Project Sync",
             organizer_email: "owner@wgs.bot",
             organizer_name: "Owner",
-            start_time: "2026-05-04T15:00:00.000Z"
+            start_time: "2026-05-04T15:00:00.000Z",
+            end_time: "2026-05-04T15:02:00.000Z"
           };
         }
         if (sql.includes("FROM settings")) {
@@ -68,6 +72,14 @@ class FakeD1 {
               { email: "alex@team.wgs.bot", name: "Alex", summary_eligible: 1 },
               { email: "casey@partner.com", name: "Casey", summary_eligible: 1 },
               { email: "vendor@example.net", name: "Vendor", summary_eligible: 0 }
+            ]
+          };
+        }
+        if (sql.includes("FROM transcript_segments")) {
+          return {
+            results: [
+              { speaker_name: "Alex", timestamp_ms: 0, duration_ms: 30_000, text: "hello" },
+              { speaker_name: "Casey", timestamp_ms: 45_000, duration_ms: 30_000, text: "status update" }
             ]
           };
         }
@@ -103,6 +115,7 @@ describe("summary workflow", () => {
         ATTENDEE_API_BASE_URL: "https://attendee.wgsglobal.app",
         API_BASE_URL: "https://minutesbot-api.wgsglobal.app",
         AI_API_KEY: "test-ai-key",
+        SESSION_SECRET: "session-secret",
         SEND_EMAIL: { send }
       },
       "mtg_1"
@@ -111,6 +124,10 @@ describe("summary workflow", () => {
     expect(send.mock.calls.map(([message]) => (message as { to: string }).to)).toEqual(["owner@wgs.bot", "alex@team.wgs.bot", "casey@partner.com"]);
     expect(db.emailDeliveries.map((values) => values[2])).toEqual(["owner@wgs.bot", "alex@team.wgs.bot", "casey@partner.com"]);
     expect(db.emailDeliveries.every((values) => values[4] === "sent")).toBe(true);
+    expect(send.mock.calls[0][0]).toMatchObject({
+      text: expect.stringContaining("/api/artifacts/mtg_1/transcript.txt?token="),
+      html: expect.stringContaining("Download raw transcript")
+    });
   });
 
   it("passes recap classification defaults into summary generation", async () => {
@@ -129,6 +146,7 @@ describe("summary workflow", () => {
         ATTENDEE_API_BASE_URL: "https://attendee.wgsglobal.app",
         API_BASE_URL: "https://minutesbot-api.wgsglobal.app",
         AI_API_KEY: "test-ai-key",
+        SESSION_SECRET: "session-secret",
         SEND_EMAIL: { send: vi.fn(async () => ({ id: "msg-1" })) }
       },
       "mtg_1"
@@ -136,7 +154,14 @@ describe("summary workflow", () => {
 
     expect(vi.mocked(summarizeTranscript).mock.calls[0][0]).toMatchObject({
       classificationEnabled: true,
-      defaultTemplate: "auto"
+      defaultTemplate: "auto",
+      shortMeetingBriefRecapEnabled: true,
+      shortMeetingDurationThresholdMinutes: 2,
+      meetingEndTime: "2026-05-04T15:02:00.000Z",
+      meetingDurationMinutes: 2,
+      transcriptDurationMinutes: 1.3,
+      speakerTurnCount: 2,
+      wordCount: 2
     });
   });
 });

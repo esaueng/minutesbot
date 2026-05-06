@@ -1,18 +1,33 @@
 import { chunkTranscript } from "./chunkTranscript";
+import { classifyRecapDepth } from "./classifyRecapDepth";
 import { classifyMeetingAcrossTranscript } from "./classifyMeeting";
 import { meetingRecapTypeLabels, type MeetingRecapType } from "./meetingTypes";
 import { buildSummaryPrompt } from "./promptTemplates";
-import { meetingSummarySchema, type MeetingSummary, type SummaryInput, type SummaryProvider } from "./types";
+import { meetingSummarySchema, type MeetingSummary, type RecapDepth, type SummaryInput, type SummaryProvider } from "./types";
 
 export async function summarizeTranscript(input: SummaryInput, provider: SummaryProvider): Promise<MeetingSummary> {
-  const chunks = chunkTranscript(input.transcriptText);
+  const depthClassification = classifyRecapDepth(input);
+  const enrichedInput = {
+    ...input,
+    recapDepth: input.recapDepth ?? depthClassification.recapDepth,
+    wordCount: input.wordCount ?? depthClassification.wordCount,
+    speakerTurnCount: input.speakerTurnCount ?? depthClassification.speakerTurnCount,
+    transcriptDurationMinutes: input.transcriptDurationMinutes ?? depthClassification.transcriptDurationMinutes
+  };
   const meetingType = await resolveSummaryMeetingType(input, provider);
+  const chunks = enrichedInput.recapDepth === "brief" ? [input.transcriptText] : chunkTranscript(input.transcriptText);
   const partials: MeetingSummary[] = [];
   for (const chunk of chunks) {
-    const result = await provider.generate(buildSummaryPrompt({ ...input, transcriptText: chunk, meetingType }));
-    partials.push({ ...meetingSummarySchema.parse(result), meetingType });
+    const result = await provider.generate(buildSummaryPrompt({ ...enrichedInput, transcriptText: chunk, meetingType }));
+    const parsed = meetingSummarySchema.parse(result);
+    partials.push({
+      ...parsed,
+      meetingType,
+      recapDepth: enrichedInput.recapDepth,
+      openQuestions: withTranscriptLimitation(parsed.openQuestions, depthClassification.transcriptAppearsLimited)
+    });
   }
-  return combineSummaries(partials, meetingType);
+  return combineSummaries(partials, meetingType, enrichedInput.recapDepth);
 }
 
 async function resolveSummaryMeetingType(input: SummaryInput, provider: SummaryProvider): Promise<MeetingRecapType> {
@@ -23,12 +38,13 @@ async function resolveSummaryMeetingType(input: SummaryInput, provider: SummaryP
   return classification.meetingType;
 }
 
-function combineSummaries(summaries: MeetingSummary[], meetingType: MeetingRecapType): MeetingSummary {
+function combineSummaries(summaries: MeetingSummary[], meetingType: MeetingRecapType, recapDepth: RecapDepth): MeetingSummary {
   return {
     meetingType,
+    recapDepth,
     meetingNotes: summaries.flatMap((summary) => summary.meetingNotes),
     followUpTasks: summaries.flatMap((summary) => summary.followUpTasks),
-    summary: normalizeSummaryLines(meetingType, summaries.flatMap((summary) => summary.summary)),
+    summary: normalizeSummaryLines(meetingType, recapDepth, summaries.flatMap((summary) => summary.summary)),
     decisions: summaries.flatMap((summary) => summary.decisions),
     actionItems: summaries.flatMap((summary) => summary.actionItems),
     openQuestions: summaries.flatMap((summary) => summary.openQuestions),
@@ -37,8 +53,18 @@ function combineSummaries(summaries: MeetingSummary[], meetingType: MeetingRecap
   };
 }
 
-function normalizeSummaryLines(meetingType: MeetingRecapType, lines: string[]): string[] {
-  const expected = `Meeting type: ${meetingRecapTypeLabels[meetingType]}`;
-  const withoutTypeLines = lines.filter((line) => !line.toLowerCase().startsWith("meeting type:"));
-  return [expected, ...withoutTypeLines];
+function normalizeSummaryLines(meetingType: MeetingRecapType, recapDepth: RecapDepth, lines: string[]): string[] {
+  const expectedType = `Meeting type: ${meetingRecapTypeLabels[meetingType]}`;
+  const expectedDepth = `Recap depth: ${recapDepth === "brief" ? "Brief" : "Standard"}`;
+  const normalized = lines.filter((line) => {
+    const lower = line.toLowerCase();
+    return !lower.startsWith("meeting type:") && !lower.startsWith("recap depth:");
+  });
+  return [expectedType, expectedDepth, ...normalized].slice(0, recapDepth === "brief" ? 5 : undefined);
+}
+
+function withTranscriptLimitation(openQuestions: string[], limited: boolean): string[] {
+  if (!limited) return openQuestions;
+  const limitation = "The transcript appears limited, so the recap may not reflect the full meeting.";
+  return openQuestions.some((item) => item.toLowerCase().includes("transcript appears limited")) ? openQuestions : [...openQuestions, limitation];
 }

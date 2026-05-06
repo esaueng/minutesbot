@@ -1,15 +1,17 @@
-import type { MeetingRecapType, MeetingSummary } from "@minutesbot/summary-engine";
+import type { MeetingRecapType, MeetingSummary, RecapDepth } from "@minutesbot/summary-engine";
 import type { RecapSectionKey } from "@minutesbot/shared";
 
 export type SummaryEmailSummary = Partial<Pick<MeetingSummary, "meetingNotes" | "followUpTasks">> &
-  Omit<MeetingSummary, "meetingType" | "meetingNotes" | "followUpTasks"> & {
+  Omit<MeetingSummary, "meetingType" | "recapDepth" | "meetingNotes" | "followUpTasks"> & {
   meetingType?: MeetingRecapType;
+  recapDepth?: RecapDepth;
 };
 
 export type SummaryEmailInput = {
   subject: string;
   date?: string;
   summary: SummaryEmailSummary;
+  transcriptDownloadUrl?: string;
   excludedRecipients?: string[];
   recap?: {
     subjectPrefix?: string;

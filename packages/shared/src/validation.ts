@@ -45,7 +45,9 @@ const defaultRecapConfig = {
   introText: "",
   classificationEnabled: true,
   defaultTemplate: "auto" as const,
-  enabledTemplates: [...recapTemplateKeys]
+  enabledTemplates: [...recapTemplateKeys],
+  shortMeetingBriefRecapEnabled: true,
+  shortMeetingDurationThresholdMinutes: 2
 };
 
 export const defaultRecapPrompt = [
@@ -133,6 +135,8 @@ export const appSettingsSchema = z.object({
       classificationEnabled: z.boolean().optional().default(defaultRecapConfig.classificationEnabled),
       defaultTemplate: z.enum(defaultRecapTemplateKeys).optional().default(defaultRecapConfig.defaultTemplate),
       enabledTemplates: z.array(z.enum(recapTemplateKeys)).optional().default(defaultRecapConfig.enabledTemplates),
+      shortMeetingBriefRecapEnabled: z.boolean().optional().default(defaultRecapConfig.shortMeetingBriefRecapEnabled),
+      shortMeetingDurationThresholdMinutes: z.number().int().min(1).max(30).optional().default(defaultRecapConfig.shortMeetingDurationThresholdMinutes),
       sections: z.array(recapSectionSchema).min(1)
     })
     .optional()
@@ -145,6 +149,8 @@ export const appSettingsSchema = z.object({
       classificationEnabled: defaultRecapConfig.classificationEnabled,
       defaultTemplate: defaultRecapConfig.defaultTemplate,
       enabledTemplates: defaultRecapConfig.enabledTemplates,
+      shortMeetingBriefRecapEnabled: defaultRecapConfig.shortMeetingBriefRecapEnabled,
+      shortMeetingDurationThresholdMinutes: defaultRecapConfig.shortMeetingDurationThresholdMinutes,
       sections: defaultRecapSections
     })
 });
@@ -199,6 +205,8 @@ export const defaultSettings: AppSettings = {
     classificationEnabled: defaultRecapConfig.classificationEnabled,
     defaultTemplate: defaultRecapConfig.defaultTemplate,
     enabledTemplates: defaultRecapConfig.enabledTemplates,
+    shortMeetingBriefRecapEnabled: defaultRecapConfig.shortMeetingBriefRecapEnabled,
+    shortMeetingDurationThresholdMinutes: defaultRecapConfig.shortMeetingDurationThresholdMinutes,
     sections: defaultRecapSections
   }
 };
@@ -242,6 +250,8 @@ function normalizeRecapSettings(recap: AppSettings["recap"]): AppSettings["recap
     classificationEnabled: recap.classificationEnabled ?? defaultRecapConfig.classificationEnabled,
     defaultTemplate: recap.defaultTemplate ?? defaultRecapConfig.defaultTemplate,
     enabledTemplates: normalizeEnabledTemplates(recap.enabledTemplates),
+    shortMeetingBriefRecapEnabled: recap.shortMeetingBriefRecapEnabled ?? defaultRecapConfig.shortMeetingBriefRecapEnabled,
+    shortMeetingDurationThresholdMinutes: recap.shortMeetingDurationThresholdMinutes ?? defaultRecapConfig.shortMeetingDurationThresholdMinutes,
     prompt: legacyDefaultRecapPrompts.has(recap.prompt) ? defaultRecapPrompt : recap.prompt,
     sections: ordered.map((key) => {
       const section = provided.get(key);

@@ -24,6 +24,7 @@ describe("summary engine", () => {
         async generate() {
           return {
             meetingType: "general",
+            recapDepth: "standard",
             meetingNotes: [
               {
                 heading: "Key Discussion Topics:",
@@ -54,6 +55,104 @@ describe("summary engine", () => {
     expect(summary.meetingNotes[0].items[0].title).toBe("Launch Plan:");
     expect(summary.followUpTasks[0].owners).toEqual(["Alex"]);
     expect(summary.meetingType).toBe("general");
+    expect(summary.recapDepth).toBe("brief");
+  });
+
+  it("classifies duration at or below two minutes as brief while preserving clear actions", async () => {
+    const summary = await summarizeTranscript(
+      {
+        meetingSubject: "Quick sync",
+        attendees: [],
+        transcriptText: "Alex: We decided Casey will send the report today.",
+        meetingDurationMinutes: 2
+      },
+      {
+        async generate(prompt) {
+          if (prompt.includes("Classify the Microsoft Teams meeting")) return { meetingType: "general", confidence: 0.7, signals: [], reason: "General" };
+          expect(prompt).toContain("Resolved recap depth: brief");
+          expect(prompt).toContain("Do not pad short meetings.");
+          return {
+            meetingType: "general",
+            recapDepth: "brief",
+            meetingNotes: [{ heading: "Brief meeting recap", overview: "", items: [{ title: "What happened", detail: "A short decision was captured." }] }],
+            followUpTasks: [{ title: "Send Report", description: "Send the report today.", owners: ["Casey"], dueDate: "Today" }],
+            summary: ["Casey will send the report today."],
+            decisions: ["Casey will send the report today."],
+            actionItems: [{ owner: "Casey", task: "Send the report today.", dueDate: "Today" }],
+            openQuestions: [],
+            risks: [],
+            followUps: []
+          };
+        }
+      }
+    );
+
+    expect(summary.recapDepth).toBe("brief");
+    expect(summary.followUpTasks[0].owners).toEqual(["Casey"]);
+    expect(summary.decisions).toEqual(["Casey will send the report today."]);
+  });
+
+  it("classifies minimal low-substance transcripts as brief and notes transcript limitations", async () => {
+    const summary = await summarizeTranscript(
+      {
+        meetingSubject: "Touch base",
+        attendees: [],
+        transcriptText: "Alex: Hi, can you hear me?\nCasey: Yes, recording looks on.\nAlex: Okay thanks, bye."
+      },
+      {
+        async generate(prompt) {
+          if (prompt.includes("Classify the Microsoft Teams meeting")) return { meetingType: "general", confidence: 0.7, signals: [], reason: "General" };
+          return {
+            meetingType: "general",
+            recapDepth: "brief",
+            meetingNotes: [{ heading: "Brief meeting recap", overview: "", items: [{ title: "Outcome", detail: "No substantive meeting content was captured." }] }],
+            followUpTasks: [],
+            summary: ["No substantive meeting content was captured."],
+            decisions: [],
+            actionItems: [],
+            openQuestions: [],
+            risks: [],
+            followUps: []
+          };
+        }
+      }
+    );
+
+    expect(summary.recapDepth).toBe("brief");
+    expect(summary.openQuestions).toContain("The transcript appears limited, so the recap may not reflect the full meeting.");
+  });
+
+  it("classifies normal substantive transcripts as standard", async () => {
+    const summary = await summarizeTranscript(
+      {
+        meetingSubject: "Weekly operations review",
+        attendees: [],
+        transcriptText: `${"Alex: The team reviewed safety, quality, delivery, cost, customer issues, staffing, production, and follow-up ownership for next week.\n".repeat(40)}`,
+        meetingDurationMinutes: 30
+      },
+      {
+        async generate(prompt) {
+          if (prompt.includes("Classify the Microsoft Teams meeting")) return { meetingType: "weekly_spqrc", confidence: 0.8, signals: ["safety"], reason: "Operations" };
+          expect(prompt).toContain("Resolved recap depth: standard");
+          expect(prompt).toContain("Safety Updates");
+          return {
+            meetingType: "weekly_spqrc",
+            recapDepth: "standard",
+            meetingNotes: [{ heading: "Safety Updates:", overview: "The team reviewed operational updates.", items: [{ title: "Safety:", detail: "Safety and operating priorities were discussed." }] }],
+            followUpTasks: [],
+            summary: ["Operations were reviewed."],
+            decisions: [],
+            actionItems: [],
+            openQuestions: [],
+            risks: [],
+            followUps: []
+          };
+        }
+      }
+    );
+
+    expect(summary.recapDepth).toBe("standard");
+    expect(summary.meetingType).toBe("weekly_spqrc");
   });
 
   it("classifies weekly SPQRC meetings from title and transcript signals", async () => {
@@ -198,10 +297,27 @@ describe("summary engine", () => {
     expect(prompt).toContain("People and Staffing Updates");
   });
 
+  it("builds brief prompts without the full topic-heavy template", () => {
+    const prompt = buildSummaryPrompt({
+      meetingSubject: "Weekly SPQRC",
+      attendees: [],
+      transcriptText: "Alex: Hi, recording worked. Bye.",
+      meetingType: "weekly_spqrc",
+      recapDepth: "brief"
+    });
+
+    expect(prompt).toContain("Resolved recap depth: brief");
+    expect(prompt).toContain("Do not pad short meetings.");
+    expect(prompt).toContain("meetingNotes must contain exactly 1 heading: Brief meeting recap.");
+    expect(prompt).not.toContain("Safety Updates");
+    expect(prompt).not.toContain("People and Staffing Updates");
+  });
+
   it("validates teams-style notes and rejects extra summary keys", () => {
     expect(() =>
       meetingSummarySchema.parse({
         meetingType: "general",
+        recapDepth: "standard",
         meetingNotes: [
           {
             heading: "Key Discussion Topics:",
@@ -222,6 +338,7 @@ describe("summary engine", () => {
     expect(() =>
       meetingSummarySchema.parse({
         meetingType: "general",
+        recapDepth: "standard",
         meetingNotes: [],
         followUpTasks: [],
         summary: [],
@@ -232,9 +349,23 @@ describe("summary engine", () => {
         followUps: []
       })
     ).toThrow();
+    expect(() =>
+      meetingSummarySchema.parse({
+        meetingType: "general",
+        meetingNotes: [],
+        followUpTasks: [],
+        summary: [],
+        decisions: [],
+        actionItems: [],
+        openQuestions: [],
+        risks: [],
+        followUps: []
+      })
+    ).toThrow();
     expect(
       meetingSummarySchema.parse({
         meetingType: "general",
+        recapDepth: "standard",
         meetingNotes: [
           {
             heading: "Key Discussion Topics:",
@@ -269,6 +400,7 @@ describe("summary engine", () => {
           }
           return {
             meetingType: "general",
+            recapDepth: "standard",
             meetingNotes: [
               {
                 heading: "Sales Pipeline and Forecast Updates:",
@@ -310,6 +442,7 @@ describe("summary engine", () => {
           expect(prompt).toContain("Resolved meeting type: weekly_sales");
           return {
             meetingType: "general",
+            recapDepth: "standard",
             meetingNotes: [
               {
                 heading: "Sales Pipeline and Forecast Updates:",

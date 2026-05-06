@@ -1,4 +1,5 @@
 export * from "./classifyMeeting";
+export * from "./classifyRecapDepth";
 export * from "./chunkTranscript";
 export * from "./meetingTypes";
 export * from "./promptTemplates";

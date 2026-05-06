@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as entrypoint from "./index";
 import { app } from "./index";
 import type { Env } from "./env";
+import { createTranscriptDownloadToken } from "@minutesbot/shared";
 
 class FakeD1 {
   prepare() {
@@ -109,6 +110,33 @@ describe("api worker", () => {
     expect(send).toHaveBeenCalledWith({ type: "fetch_transcript", meetingId: "mtg_1" });
   });
 
+  it("downloads raw transcript text with a valid signed token", async () => {
+    const token = await createTranscriptDownloadToken({ meetingId: "mtg_1", artifactType: "transcript_text", expiresAt: Date.now() + 60_000 }, "test-secret");
+    const response = await app.request(
+      `/api/artifacts/mtg_1/transcript.txt?token=${encodeURIComponent(token)}`,
+      {},
+      {
+        DB: artifactDb() as unknown as D1Database,
+        ARTIFACTS: { get: vi.fn(async () => ({ text: async () => "Alex: hello <raw>" })) } as unknown as R2Bucket,
+        SESSION_SECRET: "test-secret"
+      }
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/plain");
+    expect(response.headers.get("content-disposition")).toContain("attachment");
+    expect(await response.text()).toBe("Alex: hello <raw>");
+  });
+
+  it("rejects raw transcript downloads with invalid or expired tokens", async () => {
+    const expired = await createTranscriptDownloadToken({ meetingId: "mtg_1", artifactType: "transcript_text", expiresAt: Date.now() - 1 }, "test-secret");
+    const invalid = await app.request("/api/artifacts/mtg_1/transcript.txt?token=bad", {}, { DB: artifactDb() as unknown as D1Database, ARTIFACTS: {} as R2Bucket, SESSION_SECRET: "test-secret" });
+    const expiredResponse = await app.request(`/api/artifacts/mtg_1/transcript.txt?token=${encodeURIComponent(expired)}`, {}, { DB: artifactDb() as unknown as D1Database, ARTIFACTS: {} as R2Bucket, SESSION_SECRET: "test-secret" });
+
+    expect(invalid.status).toBe(401);
+    expect(expiredResponse.status).toBe(401);
+  });
+
   it("handles inbound email on the deployed worker entrypoint", async () => {
     const raw = `From: Alice <alice@wgs.bot>
 To: Alice <alice@wgs.bot>
@@ -147,3 +175,18 @@ END:VCALENDAR`;
     expect(queueInvite).toHaveBeenCalledOnce();
   });
 });
+
+function artifactDb() {
+  return {
+    prepare() {
+      return {
+        bind() {
+          return this;
+        },
+        async all() {
+          return { results: [{ type: "transcript_text", r2_key: "transcripts/mtg_1/transcript.txt", deleted_at: null }] };
+        }
+      };
+    }
+  };
+}

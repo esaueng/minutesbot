@@ -269,6 +269,10 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   color: #f8fafc;
 }
 
+.previewModeControl {
+  max-width: 280px;
+}
+
 .templateList {
   display: grid;
   gap: 8px;
@@ -400,6 +404,16 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   color: #99f6e4;
   font-size: 13px;
   font-weight: 650;
+}
+
+.briefPreviewCallout {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(45, 212, 191, .35);
+  border-radius: 8px;
+  background: rgba(20, 184, 166, .1);
+  color: #ccfbf1;
+  font-weight: 700;
 }
 
 .promptPreview {

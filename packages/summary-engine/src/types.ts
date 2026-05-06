@@ -1,14 +1,26 @@
 import { z } from "zod";
 import { meetingRecapTypeSchema, type MeetingRecapType } from "./meetingTypes";
 
+export const recapDepths = ["brief", "standard"] as const;
+export type RecapDepth = (typeof recapDepths)[number];
+export const recapDepthSchema = z.enum(recapDepths);
+
 export type SummaryInput = {
   meetingSubject: string;
   meetingStartTime?: string;
+  meetingEndTime?: string;
+  meetingDurationMinutes?: number;
+  transcriptDurationMinutes?: number;
+  speakerTurnCount?: number;
+  wordCount?: number;
+  shortMeetingBriefRecapEnabled?: boolean;
+  shortMeetingDurationThresholdMinutes?: number;
   organizerEmail?: string;
   attendees: Array<{ name?: string; email: string }>;
   transcriptText: string;
   prompt?: string;
   meetingType?: MeetingRecapType;
+  recapDepth?: RecapDepth;
   classificationEnabled?: boolean;
   defaultTemplate?: MeetingRecapType | "auto";
 };
@@ -16,6 +28,7 @@ export type SummaryInput = {
 export const meetingSummarySchema = z
   .object({
     meetingType: meetingRecapTypeSchema,
+    recapDepth: recapDepthSchema,
     meetingNotes: z.array(
       z
         .object({
