@@ -55,16 +55,11 @@ function renderHtml(input: SummaryEmailInput & { summary: ReturnType<typeof norm
     '<meta name="color-scheme" content="light dark">',
     '<meta name="supported-color-schemes" content="light dark">',
     "<style>:root { color-scheme: light dark; supported-color-schemes: light dark; }</style>",
-    '<div style="margin:0;padding:18px;background:#ffffff;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827;">',
-    '<div style="max-width:720px;margin:0 auto;background:#ffffff;border:1px solid #ddd6fe;border-radius:10px;overflow:hidden;">',
+    '<div style="margin:0;padding:0 8px 18px;background:#ffffff;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827;">',
+    '<div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #ddd6fe;border-radius:10px;overflow:hidden;">',
     '<div style="height:4px;background:#6d28d9;"></div>',
-    '<div style="padding:24px 24px 20px;background:#ffffff;">',
-    '<div style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#6d28d9;font-weight:800;">WGS / minutesbot</div>',
-    '<h1 style="margin:8px 0 5px;font-size:27px;line-height:1.22;color:#111827;">Meeting recap</h1>',
-    paragraph(input.subject, "margin:0 0 5px;font-size:18px;line-height:1.45;color:#111827;font-weight:800;"),
-    input.date ? paragraph(input.date, "margin:0 0 14px;font-size:15px;line-height:1.45;color:#374151;") : "",
-    `<div style="display:block;margin:14px 0 0;">${badge(meetingTypeLabel)}${input.summary.recapDepth === "brief" ? badge("Brief recap", "#ede9fe", "#5b21b6") : ""}</div>`,
-    input.transcriptDownloadUrl ? `<p style="margin:13px 0 0;font-size:15px;line-height:1.45;"><a href="${escapeAttribute(input.transcriptDownloadUrl)}" style="color:#5b21b6;font-weight:800;text-decoration:underline;">Download raw transcript</a></p>` : "",
+    '<div style="padding:14px 20px 20px;background:#ffffff;">',
+    renderHeader(input, meetingTypeLabel),
     callout(aiDisclaimer),
     input.summary.recapDepth === "brief" ? callout("Brief meeting detected<br><span style=\"font-weight:650;\">This recap is simplified because the meeting or captured transcript was very short.</span>", "#f5f3ff", "#6d28d9", "#4c1d95") : "",
     input.recap?.introText ? paragraph(input.recap.introText, "margin:15px 0 0;font-size:15px;line-height:1.55;color:#374151;") : "",
@@ -76,6 +71,25 @@ function renderHtml(input: SummaryEmailInput & { summary: ReturnType<typeof norm
     input.excludedRecipients?.length ? renderBulletSection("Not sent to external attendees", input.excludedRecipients) : "",
     '<div style="margin-top:22px;padding-top:13px;border-top:1px solid #ddd6fe;color:#374151;font-size:13px;line-height:1.5;">Sent by minutesbot<br>This recap was generated from the meeting transcript and may require human review.</div>',
     "</div></div></div>"
+  ].join("");
+}
+
+function renderHeader(input: SummaryEmailInput & { summary: ReturnType<typeof normalizeSummary> }, meetingTypeLabel: string): string {
+  return [
+    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;margin:0 0 4px;">',
+    "<tr>",
+    '<td valign="top" style="padding:0 16px 0 0;">',
+    '<div style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#6d28d9;font-weight:800;">WGS / minutesbot</div>',
+    '<h1 style="margin:6px 0 5px;font-size:27px;line-height:1.18;color:#111827;">Meeting recap</h1>',
+    paragraph(input.subject, "margin:0;font-size:18px;line-height:1.4;color:#111827;font-weight:800;"),
+    "</td>",
+    '<td valign="top" align="right" style="padding:2px 0 0 16px;text-align:right;white-space:nowrap;">',
+    input.date ? paragraph(input.date, "margin:0 0 9px;font-size:15px;line-height:1.4;color:#374151;") : "",
+    `<div style="display:block;margin:0;">${badge(meetingTypeLabel)}${input.summary.recapDepth === "brief" ? badge("Brief recap", "#ede9fe", "#5b21b6") : ""}</div>`,
+    input.transcriptDownloadUrl ? `<p style="margin:6px 0 0;font-size:15px;line-height:1.4;"><a href="${escapeAttribute(input.transcriptDownloadUrl)}" style="color:#5b21b6;font-weight:800;text-decoration:underline;">Download raw transcript</a></p>` : "",
+    "</td>",
+    "</tr>",
+    "</table>"
   ].join("");
 }
 

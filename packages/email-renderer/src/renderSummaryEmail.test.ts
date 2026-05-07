@@ -50,6 +50,10 @@ describe("email renderer", () => {
     expect(rendered.html).toContain('<meta name="supported-color-schemes" content="light dark">');
     expect(rendered.html).toContain("supported-color-schemes: light dark");
     expect(rendered.html).toContain("background:#ffffff");
+    expect(rendered.html).toContain("padding:0 8px 18px");
+    expect(rendered.html).toContain("max-width:760px");
+    expect(rendered.html).toContain('<table role="presentation" width="100%"');
+    expect(rendered.html).toContain("align=\"right\"");
     expect(rendered.html).toContain("#6d28d9");
     expect(rendered.html).toContain("#f5f3ff");
     expect(rendered.html).toContain("#5b21b6");
