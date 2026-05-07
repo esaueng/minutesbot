@@ -1,7 +1,7 @@
 # Troubleshooting
 
-- Email Worker not receiving mail: verify Cloudflare Email Routing and recorder address routing.
-- Recorder email mismatch: confirm `recorderEmail` matches `notetaker@meet.company.com`.
+- Email Worker not receiving mail: verify Cloudflare Email Routing and recorder address or alias routing.
+- Recorder email mismatch: confirm `recorderEmail` or `recorderAliasEmails` matches the inbound notetaker address, such as `notetaker@meet.company.com`.
 - No Teams URL found: inspect raw invite artifact and confirm Teams join URL appears in body, DESCRIPTION, or LOCATION.
 - Organizer domain rejected: add the organizer domain or disable external organizer rejection.
 - No eligible recipients: verify allowed domains and attendee email addresses.

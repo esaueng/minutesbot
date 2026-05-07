@@ -55,7 +55,7 @@ wrangler d1 migrations apply minutesbot-staging --remote --env staging
 pnpm deploy:staging
 ```
 
-Configure Email Routing to send `notetaker@meet.company.com` to the Email Worker. Configure custom domains such as `notes.company.com`, `api.company.com`, and `attendee.company.com` in Cloudflare DNS/routes.
+Configure Email Routing to send `notetaker@meet.company.com` to the Email Worker. Any notetaker aliases configured in Setup must also route to the same Email Worker. Configure custom domains such as `notes.company.com`, `api.company.com`, and `attendee.company.com` in Cloudflare DNS/routes.
 
 Protect the admin UI with Cloudflare Access for the MVP.
 

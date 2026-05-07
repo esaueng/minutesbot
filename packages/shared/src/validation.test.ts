@@ -8,13 +8,22 @@ describe("settings validation", () => {
       primaryDomain: "AcMe.COM",
       allowedDomains: ["AcMe.COM", "acme.com"],
       recorderEmail: "NoteTaker@Meet.AcMe.COM",
+      recorderAliasEmails: ["SalesNotes@Meet.AcMe.COM", "notetaker@meet.acme.com", "SalesNotes@meet.acme.com"],
       email: { ...defaultSettings.email, senderEmail: "Notes@AcMe.COM" }
     });
 
     expect(settings.primaryDomain).toBe("acme.com");
     expect(settings.allowedDomains).toEqual(["acme.com"]);
     expect(settings.recorderEmail).toBe("notetaker@meet.acme.com");
+    expect(settings.recorderAliasEmails).toEqual(["salesnotes@meet.acme.com"]);
     expect(settings.email.senderEmail).toBe("notes@acme.com");
+  });
+
+  it("defaults legacy settings to no recorder aliases", () => {
+    const legacySettings: Partial<typeof defaultSettings> = { ...defaultSettings };
+    delete legacySettings.recorderAliasEmails;
+
+    expect(parseSettings(legacySettings).recorderAliasEmails).toEqual([]);
   });
 
   it("defaults legacy settings to UTC and validates configured time zones", () => {
@@ -32,6 +41,7 @@ describe("settings validation", () => {
         ...defaultSettings,
         primaryDomain: "not a domain",
         recorderEmail: "invalid",
+        recorderAliasEmails: ["still-invalid"],
         attendee: { ...defaultSettings.attendee, baseUrl: "nope" }
       })
     ).toThrow();

@@ -24,6 +24,7 @@ export function SettingsForm({
   };
 
   const allowedDomainsText = value.allowedDomains.join("\n");
+  const recorderAliasEmailsText = value.recorderAliasEmails.join("\n");
 
   return (
     <form className="setupForm">
@@ -42,6 +43,7 @@ export function SettingsForm({
           <TextField label="Bot display name" value={value.attendee.botName} width="medium" onChange={(v) => update("attendee.botName", v)} />
           <BotImageField value={value} onUpload={onBotImageUpload} />
         </div>
+        <EmailAliasesField value={recorderAliasEmailsText} emails={value.recorderAliasEmails} onChange={(v) => update("recorderAliasEmails", parseEmailList(v))} />
         <div className="compactSettingRows">
           <NumberWithUnit label="Join meeting early" unit="minutes" value={value.attendee.createBotMinutesBeforeStart} onChange={(v) => update("attendee.createBotMinutesBeforeStart", v)} />
           <NumberWithUnit label="Waiting room timeout" unit="minutes" value={value.attendee.maxWaitingRoomMinutes} onChange={(v) => update("attendee.maxWaitingRoomMinutes", v)} />
@@ -143,6 +145,13 @@ export function SettingsForm({
 }
 
 export function parseAllowedDomains(value: string): string[] {
+  return value
+    .split(/[\n,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+export function parseEmailList(value: string): string[] {
   return value
     .split(/[\n,]+/)
     .map((item) => item.trim())
@@ -266,6 +275,29 @@ function AllowedDomainsField({
       <span className="fieldHelp">Enter one domain per line, or separate domains with commas.</span>
       <div className="domainChips" aria-label="Parsed allowed domains">
         {domains.length > 0 ? domains.map((domain) => <span key={domain}>{domain}</span>) : <span className="emptyChip">No domains parsed</span>}
+      </div>
+    </div>
+  );
+}
+
+function EmailAliasesField({
+  emails,
+  value,
+  onChange
+}: {
+  emails: string[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="allowedDomainsControl">
+      <label className="setupField fieldWidth-domains">
+        <span>Notetaker aliases</span>
+        <textarea rows={3} value={value} onChange={(event) => onChange(event.target.value)} />
+      </label>
+      <span className="fieldHelp">Invite aliases that route to the notetaker mailbox. Enter one email per line, or separate emails with commas.</span>
+      <div className="domainChips" aria-label="Parsed notetaker aliases">
+        {emails.length > 0 ? emails.map((email) => <span key={email}>{email}</span>) : <span className="emptyChip">No aliases configured</span>}
       </div>
     </div>
   );

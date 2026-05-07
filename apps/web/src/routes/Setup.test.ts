@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultSampleRecapRecipient, defaultSettings, type AppSettings } from "@minutesbot/shared";
-import { configuredLabel, getTimeZoneOptions, parseAllowedDomains, resolveSampleRecapRecipient } from "../components/SettingsForm";
+import { configuredLabel, getTimeZoneOptions, parseAllowedDomains, parseEmailList, resolveSampleRecapRecipient } from "../components/SettingsForm";
 import { fileToBotImageUpload, saveSetupSettings } from "./Setup";
 
 describe("setup save status", () => {
@@ -30,6 +30,16 @@ describe("allowed domains parsing", () => {
       "wgs.global",
       "subsidiary.example",
       "partner.example"
+    ]);
+  });
+});
+
+describe("notetaker alias parsing", () => {
+  it("accepts comma-separated and newline-separated emails", () => {
+    expect(parseEmailList("sales-notes@wgs.bot, plant-notes@wgs.bot\nquality-notes@wgs.bot\n\n")).toEqual([
+      "sales-notes@wgs.bot",
+      "plant-notes@wgs.bot",
+      "quality-notes@wgs.bot"
     ]);
   });
 });

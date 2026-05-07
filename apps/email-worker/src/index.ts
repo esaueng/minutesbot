@@ -37,7 +37,7 @@ export async function handleInvite(message: Pick<EmailMessage, "from" | "to" | "
     return;
   }
 
-  if (message.to.toLowerCase() !== settings.recorderEmail.toLowerCase()) {
+  if (!isRecorderRecipient(message.to, settings.recorderEmail, settings.recorderAliasEmails)) {
     await rejectInvite(env, message, "REJECTED_INVALID_RECIPIENT", "Inbound recipient does not match configured recorder email");
     return;
   }
@@ -119,6 +119,11 @@ export async function handleInvite(message: Pick<EmailMessage, "from" | "to" | "
 
   await env.INVITE_QUEUE.send({ type: "create_bot", meetingId: meeting.id });
   await createAuditLog(env.DB, { actorEmail: parsed.organizer.email, eventType: "meeting.scheduled", resourceType: "meeting", resourceId: meeting.id });
+}
+
+function isRecorderRecipient(recipient: string, recorderEmail: string, aliases: string[] = []): boolean {
+  const normalizedRecipient = recipient.trim().toLowerCase();
+  return [recorderEmail, ...aliases].some((email) => email.trim().toLowerCase() === normalizedRecipient);
 }
 
 async function rejectInvite(env: Env, message: Pick<EmailMessage, "from" | "setReject">, status: MeetingStatus, reason: string): Promise<void> {

@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
+import { defaultSettings } from "@minutesbot/shared";
 import { handleInvite } from "./index";
 
 class FakeD1 {
   meetings: unknown[][] = [];
   attendees: unknown[][] = [];
   auditEvents: unknown[][] = [];
+  settingValue: string | null;
+
+  constructor(settingValue: string | null = null) {
+    this.settingValue = settingValue;
+  }
 
   prepare(sql: string) {
     const db = this;
@@ -15,6 +21,9 @@ class FakeD1 {
         return this;
       },
       async first() {
+        if (sql.includes("FROM settings") && db.settingValue) {
+          return { key: "app", value: db.settingValue, updated_at: new Date().toISOString() };
+        }
         return null;
       },
       async run() {
@@ -113,6 +122,45 @@ END:VCALENDAR`
     );
 
     expect(setReject).toHaveBeenCalledWith("Inbound recipient does not match configured recorder email");
+  });
+
+  it("accepts configured notetaker alias recipients", async () => {
+    const setReject = vi.fn();
+    const queueInvite = vi.fn(async () => undefined);
+    const db = new FakeD1(
+      JSON.stringify({
+        ...defaultSettings,
+        recorderAliasEmails: ["sales-notes@wgs.bot", "plant-notes@wgs.bot"]
+      })
+    );
+    const env = {
+      DB: db as unknown as D1Database,
+      ARTIFACTS: { put: vi.fn(async () => undefined) } as unknown as R2Bucket,
+      INVITE_QUEUE: { send: queueInvite }
+    };
+
+    await handleInvite(
+      { from: "alice@wgs.bot", to: "sales-notes@wgs.bot", setReject },
+      env,
+      `From: Alice <alice@wgs.bot>
+To: sales-notes@wgs.bot
+
+BEGIN:VCALENDAR
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:test-alias
+SUMMARY:Alias Test
+DTSTART:20260504T150000Z
+DTEND:20260504T153000Z
+ORGANIZER;CN=Alice:mailto:alice@wgs.bot
+ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@wgs.bot
+DESCRIPTION:https://teams.microsoft.com/l/meetup-join/19%3atest%40thread.v2/0?context=%7b%7d
+END:VEVENT
+END:VCALENDAR`
+    );
+
+    expect(setReject).not.toHaveBeenCalled();
+    expect(queueInvite).toHaveBeenCalledWith(expect.objectContaining({ type: "create_bot", meetingId: expect.stringMatching(/^mtg_/) }));
   });
 
   it("uses the envelope recipient for forwarded Teams invites", async () => {

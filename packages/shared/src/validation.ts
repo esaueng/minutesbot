@@ -99,6 +99,10 @@ export const appSettingsSchema = z.object({
   timeZone: timeZoneSchema.optional().default(defaultTimeZone),
   allowedDomains: z.array(domainSchema).min(1),
   recorderEmail: z.string().trim().email().transform((value) => value.toLowerCase()),
+  recorderAliasEmails: z
+    .array(z.string().trim().email().transform((value) => value.toLowerCase()))
+    .optional()
+    .default([]),
   attendee: z.object({
     baseUrl: z.string().trim().url(),
     apiKeyConfigured: z.boolean(),
@@ -173,6 +177,7 @@ export const defaultSettings: AppSettings = {
   timeZone: defaultTimeZone,
   allowedDomains: ["wgs.bot"],
   recorderEmail: "notetaker@wgs.bot",
+  recorderAliasEmails: [],
   attendee: {
     baseUrl: "https://app.attendee.dev",
     apiKeyConfigured: false,
@@ -230,6 +235,7 @@ export function parseSettings(input: unknown): AppSettings {
     primaryDomain: parsed.primaryDomain.toLowerCase(),
     timeZone: parsed.timeZone,
     recorderEmail: parsed.recorderEmail.toLowerCase(),
+    recorderAliasEmails: normalizeRecorderAliasEmails(parsed.recorderEmail, parsed.recorderAliasEmails),
     email: {
       ...parsed.email,
       senderEmail: parsed.email.senderEmail.toLowerCase(),
@@ -237,6 +243,11 @@ export function parseSettings(input: unknown): AppSettings {
     },
     recap: normalizeRecapSettings(parsed.recap)
   };
+}
+
+function normalizeRecorderAliasEmails(recorderEmail: string, aliases: string[]): string[] {
+  const primary = recorderEmail.toLowerCase();
+  return Array.from(new Set(aliases.map((email) => email.toLowerCase()))).filter((email) => email !== primary);
 }
 
 function isValidTimeZone(value: string): boolean {
