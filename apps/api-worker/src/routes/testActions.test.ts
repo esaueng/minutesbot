@@ -175,7 +175,7 @@ describe("admin test actions", () => {
     });
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({
-      from: "recaps@wgs.bot",
+      from: "WGS Notetaker <recaps@wgs.bot>",
       to: "reviewer@example.com",
       subject: "Meeting recap: Sample recap email"
     });

@@ -3,7 +3,7 @@ import { renderSummaryEmail } from "@minutesbot/email-renderer";
 import { buildSummaryRecipients } from "@minutesbot/recipient-policy";
 import { createOpenAiCompatibleProvider, summarizeTranscript } from "@minutesbot/summary-engine";
 import { AppError, createTranscriptDownloadToken } from "@minutesbot/shared";
-import { createEmailProvider } from "@minutesbot/email-sender";
+import { createEmailProvider, formatEmailAddress } from "@minutesbot/email-sender";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import type { WorkflowEnv } from "./env";
@@ -97,7 +97,7 @@ export async function generateAndSendSummary(
   let sentCount = 0;
   for (const recipient of filtered.included) {
     try {
-      const result = await sender.send({ from: settings.email.senderEmail, to: recipient.email, ...email });
+      const result = await sender.send({ from: formatEmailAddress("WGS Notetaker", settings.email.senderEmail), to: recipient.email, ...email });
       if (result.status === "sent") sentCount += 1;
       await createEmailDelivery(env.DB, {
         meeting_id: meetingId,

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { AttendeeClient, AttendeeClientError } from "@minutesbot/attendee-client";
 import { parseIncomingInvite } from "@minutesbot/invite-parser";
 import { renderSummaryEmail } from "@minutesbot/email-renderer";
-import { createEmailProvider } from "@minutesbot/email-sender";
+import { createEmailProvider, formatEmailAddress } from "@minutesbot/email-sender";
 import { createOpenAiCompatibleProvider } from "@minutesbot/summary-engine";
 import { attendeeWebhookUrl, defaultSettings } from "@minutesbot/shared";
 import type { Env } from "../env";
@@ -155,7 +155,7 @@ export const testActionsRoute = new Hono<{ Bindings: Env }>()
     });
 
     try {
-      const result = await provider.send({ from: settings.email.senderEmail, to: parsed.data.to, ...email });
+      const result = await provider.send({ from: formatEmailAddress("WGS Notetaker", settings.email.senderEmail), to: parsed.data.to, ...email });
       if (result.status === "failed") {
         return c.json({ ok: false, message: result.failureReason ?? "Sample recap email failed to send" }, 502);
       }

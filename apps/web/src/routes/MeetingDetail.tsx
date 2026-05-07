@@ -93,7 +93,7 @@ function SummarySection({ summaryRow }: { summaryRow: Record<string, unknown> | 
         <div className="teamsRecap">
           <h3>Meeting notes</h3>
           {summary.meetingNotes.map((note) => (
-            <section key={note.heading} className="teamsPreviewBlock">
+            <section key={note.heading} className="teamsPreviewBlock teamsNoteBlock">
               <h4>{note.heading}</h4>
               {note.overview ? <p>{note.overview}</p> : null}
               {note.items.map((item) => (
@@ -107,7 +107,7 @@ function SummarySection({ summaryRow }: { summaryRow: Record<string, unknown> | 
           <h3>Follow-up tasks</h3>
           {summary.followUpTasks.length > 0 ? (
             summary.followUpTasks.map((task) => (
-              <section key={task.title} className="teamsPreviewBlock">
+              <section key={task.title} className="teamsPreviewBlock teamsTaskBlock">
                 <strong>{task.title}</strong>
                 <p>{task.description} ({formatOwners(task.owners)}) Due: {task.dueDate}</p>
               </section>

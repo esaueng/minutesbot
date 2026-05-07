@@ -760,62 +760,71 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .structureList {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px 12px;
 }
 
 .structureList span {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 5px 9px;
-  border: 1px solid #253247;
-  border-radius: 8px;
-  background: rgba(2, 6, 23, .42);
-  color: #cbd5e1;
+  min-height: 22px;
+  padding-left: 8px;
+  border-left: 2px solid #2dd4bf;
+  color: #e2e8f0;
   font-size: 13px;
 }
 
 .teamsPreview,
 .teamsRecap {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .teamsPreview h4,
 .teamsRecap h3,
 .teamsRecap h4 {
   margin: 0;
+  color: #f8fafc;
 }
 
 .teamsPreviewBlock {
   display: grid;
-  gap: 7px;
-  padding: 12px;
-  border: 1px solid #253247;
-  border-radius: 8px;
-  background: #0b1220;
+  gap: 6px;
+  padding: 0 0 10px;
+  border: 0;
+  border-bottom: 1px solid #334155;
+  border-radius: 0;
+  background: transparent;
+}
+
+.teamsPreviewBlock strong {
+  color: #f8fafc;
 }
 
 .teamsPreviewBlock p {
   margin: 0;
-  color: #cbd5e1;
+  color: #e2e8f0;
   line-height: 1.45;
+}
+
+.teamsTaskBlock {
+  padding-left: 10px;
+  border-bottom: 0;
+  border-left: 3px solid #2dd4bf;
 }
 
 .aiDisclaimer {
   margin: 0;
-  color: #99f6e4;
+  color: #fef3c7;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 750;
 }
 
 .briefPreviewCallout {
   margin: 0;
-  padding: 10px 12px;
-  border: 1px solid rgba(45, 212, 191, .35);
-  border-radius: 8px;
-  background: rgba(20, 184, 166, .1);
-  color: #ccfbf1;
+  padding: 2px 0 2px 10px;
+  border-left: 3px solid #2dd4bf;
+  background: transparent;
+  color: #f8fafc;
   font-weight: 700;
 }
 

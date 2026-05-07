@@ -46,6 +46,9 @@ describe("email renderer", () => {
     expect(rendered.html).toContain("Key Discussion Topics:");
     expect(rendered.html).toContain("<strong>Launch Readiness:</strong>");
     expect(rendered.html).toContain("Follow-up tasks");
+    expect(rendered.html).toContain("background:#0b1120");
+    expect(rendered.html).toContain("border-left:3px solid #2dd4bf");
+    expect(rendered.html).not.toContain("border:1px solid #dbe6ea");
   });
 
   it("renders organizer-only failure notices", () => {
