@@ -1,4 +1,4 @@
-import { defaultSettings } from "@minutesbot/shared";
+import { defaultSettings, verifyTranscriptDownloadToken } from "@minutesbot/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateAndSendSummary } from "./summaryWorkflow";
 import { summarizeTranscript } from "@minutesbot/summary-engine";
@@ -28,6 +28,8 @@ vi.mock("@minutesbot/summary-engine", () => ({
 class FakeD1 {
   emailDeliveries: unknown[][] = [];
 
+  constructor(private readonly settings = defaultSettings) {}
+
   prepare(sql: string) {
     const db = this;
     return {
@@ -51,11 +53,11 @@ class FakeD1 {
           return {
             key: "app",
             value: JSON.stringify({
-              ...defaultSettings,
+              ...db.settings,
               primaryDomain: "wgs.bot",
               allowedDomains: ["partner.com"],
-              policy: { ...defaultSettings.policy, allowSubdomains: true },
-              email: { ...defaultSettings.email, provider: "cloudflare-email-service" }
+              policy: { ...db.settings.policy, allowSubdomains: true },
+              email: { ...db.settings.email, provider: "cloudflare-email-service" }
             }),
             updated_at: "2026-05-04T00:00:00.000Z"
           };
@@ -127,8 +129,47 @@ describe("summary workflow", () => {
     expect(send.mock.calls[0][0]).toMatchObject({
       from: "WGS Notetaker <notetaker@wgs.bot>",
       text: expect.stringContaining("/api/artifacts/mtg_1/transcript.txt?token="),
-      html: expect.stringContaining("Download raw transcript")
+      html: expect.stringContaining("Download Transcript")
     });
+  });
+
+  it("uses the configured transcript link expiration when signing recap downloads", async () => {
+    const db = new FakeD1({
+      ...defaultSettings,
+      recap: {
+        ...defaultSettings.recap,
+        transcriptDownloadExpirationHours: 6
+      }
+    });
+    const send = vi.fn(async (message: unknown) => ({ id: `msg-${(message as { to: string }).to}` }));
+    const now = Date.now();
+
+    await generateAndSendSummary(
+      {
+        DB: db as unknown as D1Database,
+        ARTIFACTS: {
+          get: vi.fn(async () => ({ text: async () => "Alex: hello" })),
+          put: vi.fn(async () => undefined)
+        } as unknown as R2Bucket,
+        INVITE_QUEUE: { send: vi.fn() },
+        SUMMARY_QUEUE: { send: vi.fn() },
+        EMAIL_QUEUE: { send: vi.fn() },
+        ATTENDEE_API_BASE_URL: "https://attendee.wgsglobal.app",
+        API_BASE_URL: "https://minutesbot-api.wgsglobal.app",
+        AI_API_KEY: "test-ai-key",
+        SESSION_SECRET: "session-secret",
+        SEND_EMAIL: { send }
+      },
+      "mtg_1"
+    );
+
+    const text = send.mock.calls[0][0] as { text: string };
+    const token = text.text.match(/token=([^)\s]+)/)?.[1];
+    expect(token).toBeTruthy();
+    const payload = await verifyTranscriptDownloadToken(decodeURIComponent(token!), "session-secret");
+
+    expect(payload?.expiresAt).toBeGreaterThanOrEqual(now + 6 * 60 * 60 * 1000 - 1000);
+    expect(payload?.expiresAt).toBeLessThanOrEqual(now + 6 * 60 * 60 * 1000 + 1000);
   });
 
   it("passes recap classification defaults into summary generation", async () => {

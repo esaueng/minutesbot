@@ -130,6 +130,7 @@ export function SettingsForm({
           <NumberWithUnit label="Transcripts" unit="days" value={value.retention.transcriptDays} onChange={(v) => update("retention.transcriptDays", v)} />
           <NumberWithUnit label="Summaries" unit="days" value={value.retention.summaryDays} onChange={(v) => update("retention.summaryDays", v)} />
           <NumberWithUnit label="Audit logs" unit="days" value={value.retention.auditLogDays} onChange={(v) => update("retention.auditLogDays", v)} />
+          <NumberWithUnit label="Transcript link expiration" unit="hours" value={value.recap.transcriptDownloadExpirationHours} onChange={(v) => update("recap.transcriptDownloadExpirationHours", v)} />
         </div>
       </SettingsSection>
 

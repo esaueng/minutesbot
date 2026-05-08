@@ -116,6 +116,7 @@ describe("settings validation", () => {
     expect(settings.recap.enabledTemplates).toEqual(["weekly_spqrc", "weekly_sales", "plant_meeting", "general"]);
     expect(settings.recap.shortMeetingBriefRecapEnabled).toBe(true);
     expect(settings.recap.shortMeetingDurationThresholdMinutes).toBe(2);
+    expect(settings.recap.transcriptDownloadExpirationHours).toBe(24);
     expect(settings.recap.sections.map((section) => section.key)).toEqual([
       "summary",
       "decisions",
@@ -183,6 +184,7 @@ describe("settings validation", () => {
     expect(settings.recap.enabledTemplates).toEqual(["weekly_spqrc", "weekly_sales", "plant_meeting", "general"]);
     expect(settings.recap.shortMeetingBriefRecapEnabled).toBe(true);
     expect(settings.recap.shortMeetingDurationThresholdMinutes).toBe(2);
+    expect(settings.recap.transcriptDownloadExpirationHours).toBe(24);
   });
 
   it("upgrades the legacy built-in recap prompt but preserves custom prompts", () => {

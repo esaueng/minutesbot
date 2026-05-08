@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { defaultSampleRecapRecipient, defaultSettings, type AppSettings } from "@minutesbot/shared";
-import { configuredLabel, getTimeZoneOptions, parseAllowedDomains, parseEmailList, resolveSampleRecapRecipient } from "../components/SettingsForm";
+import { SettingsForm, configuredLabel, getTimeZoneOptions, parseAllowedDomains, parseEmailList, resolveSampleRecapRecipient } from "../components/SettingsForm";
 import { fileToBotImageUpload, saveSetupSettings } from "./Setup";
 
 describe("setup save status", () => {
@@ -54,6 +56,16 @@ describe("setup status labels", () => {
   it("labels configured and missing secrets without exposing values", () => {
     expect(configuredLabel(true)).toBe("Configured");
     expect(configuredLabel(false)).toBe("Missing");
+  });
+});
+
+describe("settings form", () => {
+  it("renders transcript download expiration as a configurable setup field", () => {
+    const html = renderToStaticMarkup(React.createElement(SettingsForm, { value: defaultSettings, onChange: () => undefined }));
+
+    expect(html).toContain("Transcript link expiration");
+    expect(html).toContain("hours");
+    expect(html).toContain('value="24"');
   });
 });
 

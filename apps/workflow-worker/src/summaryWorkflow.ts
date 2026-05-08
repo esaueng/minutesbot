@@ -85,7 +85,8 @@ export async function generateAndSendSummary(
     subject: meeting.subject ?? "Untitled meeting",
     date: meeting.start_time ?? undefined,
     summary,
-    transcriptDownloadUrl: await buildTranscriptDownloadUrl(env, meetingId),
+    transcriptDownloadUrl: await buildTranscriptDownloadUrl(env, meetingId, settings.recap.transcriptDownloadExpirationHours),
+    transcriptDownloadExpirationHours: settings.recap.transcriptDownloadExpirationHours,
     excludedRecipients: filtered.excluded.map((recipient) => recipient.email),
     recap: {
       subjectPrefix: settings.recap.subjectPrefix,
@@ -153,9 +154,9 @@ function calculateTranscriptMetrics(transcriptText: string, segments: Array<Reco
   return { wordCount, speakerTurnCount, transcriptDurationMinutes: Math.round(((last - first) / 60_000) * 10) / 10 };
 }
 
-async function buildTranscriptDownloadUrl(env: WorkflowEnv, meetingId: string): Promise<string | undefined> {
+async function buildTranscriptDownloadUrl(env: WorkflowEnv, meetingId: string, expirationHours: number): Promise<string | undefined> {
   if (!env.SESSION_SECRET || !env.API_BASE_URL) return undefined;
-  const expiresAt = Date.now() + 14 * 24 * 60 * 60 * 1000;
+  const expiresAt = Date.now() + expirationHours * 60 * 60 * 1000;
   const token = await createTranscriptDownloadToken({ meetingId, artifactType: "transcript_text", expiresAt }, env.SESSION_SECRET);
   return `${env.API_BASE_URL.replace(/\/+$/, "")}/api/artifacts/${encodeURIComponent(meetingId)}/transcript.txt?token=${encodeURIComponent(token)}`;
 }

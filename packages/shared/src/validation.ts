@@ -54,7 +54,8 @@ const defaultRecapConfig = {
   defaultTemplate: "auto" as const,
   enabledTemplates: [...recapTemplateKeys],
   shortMeetingBriefRecapEnabled: true,
-  shortMeetingDurationThresholdMinutes: 2
+  shortMeetingDurationThresholdMinutes: 2,
+  transcriptDownloadExpirationHours: 24
 };
 
 export const defaultSampleRecapRecipient = "it@wgsglobalservices.com";
@@ -151,6 +152,7 @@ export const appSettingsSchema = z.object({
       enabledTemplates: z.array(z.enum(recapTemplateKeys)).optional().default(defaultRecapConfig.enabledTemplates),
       shortMeetingBriefRecapEnabled: z.boolean().optional().default(defaultRecapConfig.shortMeetingBriefRecapEnabled),
       shortMeetingDurationThresholdMinutes: z.number().int().min(1).max(30).optional().default(defaultRecapConfig.shortMeetingDurationThresholdMinutes),
+      transcriptDownloadExpirationHours: z.number().int().min(1).max(720).optional().default(defaultRecapConfig.transcriptDownloadExpirationHours),
       sections: z.array(recapSectionSchema).min(1)
     })
     .optional()
@@ -165,6 +167,7 @@ export const appSettingsSchema = z.object({
       enabledTemplates: defaultRecapConfig.enabledTemplates,
       shortMeetingBriefRecapEnabled: defaultRecapConfig.shortMeetingBriefRecapEnabled,
       shortMeetingDurationThresholdMinutes: defaultRecapConfig.shortMeetingDurationThresholdMinutes,
+      transcriptDownloadExpirationHours: defaultRecapConfig.transcriptDownloadExpirationHours,
       sections: defaultRecapSections
     })
 });
@@ -223,6 +226,7 @@ export const defaultSettings: AppSettings = {
     enabledTemplates: defaultRecapConfig.enabledTemplates,
     shortMeetingBriefRecapEnabled: defaultRecapConfig.shortMeetingBriefRecapEnabled,
     shortMeetingDurationThresholdMinutes: defaultRecapConfig.shortMeetingDurationThresholdMinutes,
+    transcriptDownloadExpirationHours: defaultRecapConfig.transcriptDownloadExpirationHours,
     sections: defaultRecapSections
   }
 };
@@ -274,6 +278,7 @@ function normalizeRecapSettings(recap: AppSettings["recap"]): AppSettings["recap
     enabledTemplates: normalizeEnabledTemplates(recap.enabledTemplates),
     shortMeetingBriefRecapEnabled: recap.shortMeetingBriefRecapEnabled ?? defaultRecapConfig.shortMeetingBriefRecapEnabled,
     shortMeetingDurationThresholdMinutes: recap.shortMeetingDurationThresholdMinutes ?? defaultRecapConfig.shortMeetingDurationThresholdMinutes,
+    transcriptDownloadExpirationHours: recap.transcriptDownloadExpirationHours ?? defaultRecapConfig.transcriptDownloadExpirationHours,
     prompt: legacyDefaultRecapPrompts.has(recap.prompt) ? defaultRecapPrompt : recap.prompt,
     sections: ordered.map((key) => {
       const section = provided.get(key);

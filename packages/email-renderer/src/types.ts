@@ -12,6 +12,7 @@ export type SummaryEmailInput = {
   date?: string;
   summary: SummaryEmailSummary;
   transcriptDownloadUrl?: string;
+  transcriptDownloadExpirationHours?: number;
   excludedRecipients?: string[];
   recap?: {
     subjectPrefix?: string;
