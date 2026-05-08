@@ -20,7 +20,7 @@ export class AttendeeClient {
         meeting_url: input.meetingUrl,
         bot_name: input.botName,
         bot_image: input.botImage,
-        bot_chat_message: input.botChatMessage,
+        bot_chat_message: input.botChatMessage ? { to: "everyone", message: input.botChatMessage } : undefined,
         recording_settings: input.recordingSettings ? { format: input.recordingSettings.format } : undefined,
         external_media_storage_settings: input.externalMediaStorageSettings
           ? {

@@ -96,7 +96,10 @@ describe("AttendeeClient", () => {
     });
 
     expect(JSON.parse(fetcher.mock.calls[0]?.[1]?.body as string)).toMatchObject({
-      bot_chat_message: "Hi, I'm WGS Notetaker, an automated meeting notetaker."
+      bot_chat_message: {
+        to: "everyone",
+        message: "Hi, I'm WGS Notetaker, an automated meeting notetaker."
+      }
     });
   });
 
