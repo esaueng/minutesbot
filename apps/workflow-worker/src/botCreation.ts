@@ -43,6 +43,7 @@ export async function createMeetingBot(env: WorkflowEnv, meetingId: string): Pro
       meetingUrl: meeting.teams_join_url ?? "",
       botName: settings.attendee.botName,
       botImage: await loadBotImage(env, settings.attendee.botImage),
+      botChatMessage: botJoinChatMessage(settings.attendee.botName),
       recordingSettings: { format: "mp3" },
       externalMediaStorageSettings: {
         bucketName: env.ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME,
@@ -76,6 +77,10 @@ export async function createMeetingBot(env: WorkflowEnv, meetingId: string): Pro
     status: "BOT_CREATED"
   });
   await createAuditLog(env.DB, { eventType: "bot.created", resourceType: "meeting", resourceId: meetingId, metadata: { botId: bot.id, state: bot.state } });
+}
+
+function botJoinChatMessage(botName: string): string {
+  return `Hi, I'm ${botName}, an automated WGS meeting notetaker. I record and transcribe this meeting so the team can receive a recap.`;
 }
 
 async function loadBotImage(

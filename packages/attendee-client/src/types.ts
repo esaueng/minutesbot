@@ -19,6 +19,7 @@ export type CreateAttendeeBotInput = {
     type: "image/png" | "image/jpeg";
     data: string;
   };
+  botChatMessage?: string;
   externalMediaStorageSettings?: {
     bucketName: string;
     recordingFileName?: string;

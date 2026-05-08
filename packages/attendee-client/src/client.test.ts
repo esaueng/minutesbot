@@ -83,6 +83,23 @@ describe("AttendeeClient", () => {
     });
   });
 
+  it("serializes a chat message to send when the bot joins", async () => {
+    const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      Response.json({ id: "bot_1", meeting_url: "https://teams.microsoft.com/l/meetup-join/x", state: "created" })
+    );
+    const client = new AttendeeClient({ baseUrl: "https://attendee.company.com/", apiKey: "secret", fetcher });
+
+    await client.createBot({
+      meetingUrl: "https://teams.microsoft.com/l/meetup-join/x",
+      botName: "WGS Notetaker",
+      botChatMessage: "Hi, I'm WGS Notetaker, an automated meeting notetaker."
+    });
+
+    expect(JSON.parse(fetcher.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      bot_chat_message: "Hi, I'm WGS Notetaker, an automated meeting notetaker."
+    });
+  });
+
   it("normalizes rate limits into retryable typed errors", async () => {
     const fetcher = vi.fn(async () => new Response("rate limited", { status: 429 }));
     const client = new AttendeeClient({ baseUrl: "https://attendee.company.com", apiKey: "secret", fetcher });
