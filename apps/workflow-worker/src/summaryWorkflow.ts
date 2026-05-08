@@ -69,9 +69,11 @@ export async function generateAndSendSummary(
   await updateSummaryStatus(env.DB, meetingId, "ready", "SUMMARY_READY");
   await createAuditLog(env.DB, { eventType: "summary.generated", resourceType: "meeting", resourceId: meetingId });
 
+  const eligibleInvitees = attendees.filter((attendee) => attendee.summary_eligible);
+  const ineligibleInviteeEmails = attendees.filter((attendee) => !attendee.summary_eligible).map((attendee) => attendee.email);
   const filtered = buildSummaryRecipients({
     organizer: meeting.organizer_email ? { email: meeting.organizer_email, name: meeting.organizer_name ?? undefined } : null,
-    attendees: attendees.map((attendee) => ({ email: attendee.email, name: attendee.name ?? undefined })),
+    attendees: eligibleInvitees.map((attendee) => ({ email: attendee.email, name: attendee.name ?? undefined })),
     primaryDomain: settings.primaryDomain,
     allowedDomains: settings.allowedDomains,
     allowSubdomains: settings.policy.allowSubdomains
@@ -87,7 +89,7 @@ export async function generateAndSendSummary(
     summary,
     transcriptDownloadUrl: await buildTranscriptDownloadUrl(env, meetingId, settings.recap.transcriptDownloadExpirationHours),
     transcriptDownloadExpirationHours: settings.recap.transcriptDownloadExpirationHours,
-    excludedRecipients: filtered.excluded.map((recipient) => recipient.email),
+    excludedRecipients: Array.from(new Set([...filtered.excluded.map((recipient) => recipient.email), ...ineligibleInviteeEmails])),
     recap: {
       subjectPrefix: settings.recap.subjectPrefix,
       introText: settings.recap.introText,

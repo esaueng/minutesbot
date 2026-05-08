@@ -73,6 +73,8 @@ class FakeD1 {
             results: [
               { email: "alex@team.wgs.bot", name: "Alex", summary_eligible: 1 },
               { email: "casey@partner.com", name: "Casey", summary_eligible: 1 },
+              { email: "no-show@wgs.bot", name: "Invited No Show", summary_eligible: 1 },
+              { email: "do-not-send@partner.com", name: "Stored Ineligible", summary_eligible: 0, exclusion_reason: "excluded_external_domain" },
               { email: "vendor@example.net", name: "Vendor", summary_eligible: 0 }
             ]
           };
@@ -123,8 +125,8 @@ describe("summary workflow", () => {
       "mtg_1"
     );
 
-    expect(send.mock.calls.map(([message]) => (message as { to: string }).to)).toEqual(["owner@wgs.bot", "alex@team.wgs.bot", "casey@partner.com"]);
-    expect(db.emailDeliveries.map((values) => values[2])).toEqual(["owner@wgs.bot", "alex@team.wgs.bot", "casey@partner.com"]);
+    expect(send.mock.calls.map(([message]) => (message as { to: string }).to)).toEqual(["owner@wgs.bot", "alex@team.wgs.bot", "casey@partner.com", "no-show@wgs.bot"]);
+    expect(db.emailDeliveries.map((values) => values[2])).toEqual(["owner@wgs.bot", "alex@team.wgs.bot", "casey@partner.com", "no-show@wgs.bot"]);
     expect(db.emailDeliveries.every((values) => values[4] === "sent")).toBe(true);
     expect(send.mock.calls[0][0]).toMatchObject({
       from: "WGS Notetaker <notetaker@wgs.bot>",
