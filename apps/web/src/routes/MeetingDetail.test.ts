@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { normalizeSummaryForDisplay, summarizeArtifacts } from "./MeetingDetail";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { getRecapEmailDeliveryStatus, RecipientEligibilityTable } from "../components/RecipientEligibilityTable";
 
 describe("meeting artifact summaries", () => {
   it("groups repeated artifact rows and keeps the latest timestamp", () => {
@@ -52,6 +55,43 @@ describe("meeting artifact summaries", () => {
         deleted: false
       }
     ]);
+  });
+});
+
+describe("recipient recap delivery status", () => {
+  it("uses the latest summary email delivery for each attendee", () => {
+    const status = getRecapEmailDeliveryStatus(
+      { email: "Peter.Test@wgsglobalservices.com" },
+      [
+        {
+          recipient_email: "peter.test@wgsglobalservices.com",
+          type: "summary",
+          status: "failed",
+          failure_reason: "SMTP provider failed",
+          created_at: "2026-05-08T12:00:00.000Z"
+        },
+        {
+          recipient_email: "peter.test@wgsglobalservices.com",
+          type: "summary",
+          status: "sent",
+          created_at: "2026-05-08T12:05:00.000Z"
+        }
+      ]
+    );
+
+    expect(status).toEqual({ label: "Sent", badgeClass: "good" });
+  });
+
+  it("renders a recap email status column", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(RecipientEligibilityTable, {
+        attendees: [{ id: "att_1", email: "peter.test@wgsglobalservices.com", summary_eligible: 1 }],
+        emailDeliveries: [{ recipient_email: "peter.test@wgsglobalservices.com", type: "summary", status: "sent", created_at: "2026-05-08T12:05:00.000Z" }]
+      })
+    );
+
+    expect(html).toContain("Recap email");
+    expect(html).toContain("Sent");
   });
 });
 

@@ -40,7 +40,10 @@ export function MeetingDetail({ id }: { id: string }) {
           <Metric label="Summary status" value={String(meeting.summary_status ?? "")} />
         </div>
       </section>
-      <RecipientEligibilityTable attendees={(data.attendees as Array<Record<string, unknown>>) ?? []} />
+      <RecipientEligibilityTable
+        attendees={(data.attendees as Array<Record<string, unknown>>) ?? []}
+        emailDeliveries={(data.emailDeliveries as Array<Record<string, unknown>>) ?? []}
+      />
       <AttendeeStatePanel meeting={meeting} />
       {meeting.latest_error ? (
         <section>
