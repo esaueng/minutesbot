@@ -100,12 +100,15 @@ function renderHeader(input: SummaryEmailInput & { summary: ReturnType<typeof no
 
 function renderMeetingNotesText(notes: ReturnType<typeof normalizeSummary>["meetingNotes"]): string[] {
   if (notes.length === 0) return ["None captured.", ""];
-  return notes.flatMap((note) => [
-    note.heading,
-    note.overview,
-    ...note.items.flatMap((item) => [item.title, item.detail, ""]),
-    ""
-  ]);
+  return notes.flatMap((note) => {
+    const overview = shouldRenderMeetingNoteOverview(note.overview) ? note.overview : "";
+    return [
+      note.heading,
+      overview,
+      ...note.items.flatMap((item) => [item.title, item.detail, ""]),
+      ""
+    ];
+  });
 }
 
 function renderFollowUpTasksText(tasks: ReturnType<typeof normalizeSummary>["followUpTasks"]): string[] {
@@ -126,13 +129,17 @@ function renderMeetingNotesHtml(notes: ReturnType<typeof normalizeSummary>["meet
       (note) =>
         `<div style="margin:0 0 14px;padding:0 0 14px;border-bottom:1px solid #ede9fe;">` +
         `<h3 style="margin:0 0 7px;font-size:17px;line-height:1.35;color:#111827;">${escapeHtml(note.heading)}</h3>` +
-        (note.overview ? paragraph(note.overview, "margin:0 0 11px;font-size:15px;line-height:1.55;color:#374151;") : "") +
+        (shouldRenderMeetingNoteOverview(note.overview) ? paragraph(note.overview, "margin:0 0 11px;font-size:15px;line-height:1.55;color:#374151;") : "") +
         note.items
           .map((item) => `<p style="margin:9px 0 4px;font-size:15px;line-height:1.45;color:#111827;"><strong style="color:#111827;">${escapeHtml(item.title)}</strong></p>${paragraph(item.detail, "margin:0;font-size:15px;line-height:1.55;color:#374151;")}`)
           .join("") +
         "</div>"
     )
     .join("");
+}
+
+function shouldRenderMeetingNoteOverview(value: string): boolean {
+  return value.trim() !== "" && value.trim() !== aiDisclaimer;
 }
 
 function renderFollowUpTasksHtml(tasks: ReturnType<typeof normalizeSummary>["followUpTasks"]): string {
