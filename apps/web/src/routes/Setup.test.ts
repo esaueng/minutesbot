@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { File as NodeFile } from "node:buffer";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { defaultSampleRecapRecipient, defaultSettings, type AppSettings } from "@minutesbot/shared";
@@ -81,12 +82,12 @@ describe("sample recap recipient", () => {
 
 describe("bot image upload", () => {
   it("compresses uploaded bot background images into optimized JPEG API input", async () => {
-    const file = new File([new Uint8Array([1, 2, 3])], "wgsbot.png", { type: "image/png" });
+    const file = new NodeFile([new Uint8Array([1, 2, 3])], "wgsbot.png", { type: "image/png" }) as unknown as File;
 
     await expect(
       fileToBotImageUpload(file, async (uploaded) => {
         expect(uploaded).toBe(file);
-        return new File([new Uint8Array([4, 5, 6])], "wgsbot-optimized.jpg", { type: "image/jpeg" });
+        return new NodeFile([new Uint8Array([4, 5, 6])], "wgsbot-optimized.jpg", { type: "image/jpeg" }) as unknown as File;
       })
     ).resolves.toEqual({
       contentType: "image/jpeg",

@@ -1,7 +1,14 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { createContext, useContext, useState, type FormEvent, type ReactNode } from "react";
 import { setApiAuthTokenProvider } from "./lib/api";
 
 const ADMIN_TOKEN_STORAGE_KEY = "minutesbot.adminToken";
+const AdminSessionContext = createContext<{ signOut: () => void } | null>(null);
+
+export function useAdminSession(): { signOut: () => void } {
+  const session = useContext(AdminSessionContext);
+  if (!session) throw new Error("useAdminSession must be used inside AuthGate");
+  return session;
+}
 
 export function getStoredAdminToken(): string | null {
   return typeof window === "undefined" ? null : window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
@@ -52,13 +59,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
 
   return (
-    <>
-      <div className="userMenu">
-        <button type="button" onClick={clearToken}>
-          Sign out
-        </button>
-      </div>
+    <AdminSessionContext.Provider value={{ signOut: clearToken }}>
       {children}
-    </>
+    </AdminSessionContext.Provider>
   );
 }

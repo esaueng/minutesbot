@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { RouteName } from "../App";
+import { useAdminSession } from "../AuthGate";
 
 const nav: Array<{ route: RouteName; label: string; href: string }> = [
   { route: "setup", label: "Setup", href: "#/setup" },
@@ -10,6 +11,8 @@ const nav: Array<{ route: RouteName; label: string; href: string }> = [
 ];
 
 export function Layout({ children, route }: { children: ReactNode; route: RouteName }) {
+  const { signOut } = useAdminSession();
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -26,6 +29,11 @@ export function Layout({ children, route }: { children: ReactNode; route: RouteN
             </a>
           ))}
         </nav>
+        <div className="sidebarUserMenu">
+          <button type="button" onClick={signOut}>
+            Sign out
+          </button>
+        </div>
       </aside>
       <main className="content">{children}</main>
     </div>
