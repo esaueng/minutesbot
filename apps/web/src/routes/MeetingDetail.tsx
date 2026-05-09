@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AttendeeStatePanel } from "../components/AttendeeStatePanel";
+import { BotStatePanel } from "../components/BotStatePanel";
 import { RecipientEligibilityTable } from "../components/RecipientEligibilityTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { apiDelete, apiGet, apiPost } from "../lib/api";
@@ -27,7 +27,7 @@ export function MeetingDetail({ id }: { id: string }) {
           <Action label="Fetch transcript" run={() => apiPost(`/api/meetings/${id}/fetch-transcript`)} done={load} />
           <Action label="Retry summary" run={() => apiPost(`/api/meetings/${id}/retry-summary`)} done={load} />
           <Action label="Delete artifacts" run={() => apiDelete(`/api/meetings/${id}/artifacts`)} done={load} />
-          <Action label="Delete Attendee data" run={() => apiPost(`/api/meetings/${id}/delete-attendee-data`)} done={load} />
+          <Action label="Delete bot runtime data" run={() => apiPost(`/api/meetings/${id}/delete-bot-data`)} done={load} />
         </div>
         {message && <p>{message}</p>}
       </section>
@@ -44,7 +44,7 @@ export function MeetingDetail({ id }: { id: string }) {
         attendees={(data.attendees as Array<Record<string, unknown>>) ?? []}
         emailDeliveries={(data.emailDeliveries as Array<Record<string, unknown>>) ?? []}
       />
-      <AttendeeStatePanel meeting={meeting} />
+      <BotStatePanel meeting={meeting} />
       {meeting.latest_error ? (
         <section>
           <h2>Latest error</h2>

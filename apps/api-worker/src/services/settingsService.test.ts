@@ -40,7 +40,7 @@ function env(overrides: Partial<Env> = {}): Env {
     EMAIL_QUEUE: { send: async () => undefined },
     APP_BASE_URL: "https://minutesbot.example.com",
     API_BASE_URL: "https://minutesbot.example.com",
-    ATTENDEE_API_BASE_URL: "https://attendee.example.com",
+    BOT_API_BASE_URL: "https://meeting-bot.example.com",
     DEFAULT_RECORDER_EMAIL: "notetaker@example.com",
     DEFAULT_SENDER_EMAIL: "notetaker@example.com",
     ENVIRONMENT: "test",
@@ -82,12 +82,12 @@ describe("settings service", () => {
     });
 
     expect(put).toHaveBeenCalledWith(
-      "settings/attendee-bot-image.png",
+      "settings/meeting-bot-image.png",
       new Uint8Array([1, 2, 3]),
       expect.objectContaining({ httpMetadata: { contentType: "image/png" } })
     );
     expect(settings.attendee.botImage).toMatchObject({
-      r2Key: "settings/attendee-bot-image.png",
+      r2Key: "settings/meeting-bot-image.png",
       contentType: "image/png",
       fileName: "wgsbot.png"
     });

@@ -7,18 +7,18 @@ import {
   updateMeetingBotState,
   updateMeetingStatus
 } from "@minutesbot/db";
-import type { AttendeeWebhookTrigger } from "@minutesbot/attendee-client";
+import type { BotWebhookTrigger } from "@minutesbot/bot-client";
 import type { Env } from "../env";
 
-export type AttendeeWebhookPayload = {
+export type BotWebhookPayload = {
   idempotency_key?: string;
   bot_id: string;
   bot_metadata?: { minutesbot_meeting_id?: string; calendar_uid?: string };
-  trigger: AttendeeWebhookTrigger;
+  trigger: BotWebhookTrigger;
   data: Record<string, unknown>;
 };
 
-export async function processAttendeeWebhook(env: Env, payload: AttendeeWebhookPayload): Promise<{ duplicate: boolean; meetingId?: string }> {
+export async function processBotWebhook(env: Env, payload: BotWebhookPayload): Promise<{ duplicate: boolean; meetingId?: string }> {
   const meeting =
     (payload.bot_metadata?.minutesbot_meeting_id ? await getMeeting(env.DB, payload.bot_metadata.minutesbot_meeting_id) : null) ??
     (await findMeetingByBot(env.DB, payload.bot_id));
@@ -70,6 +70,8 @@ export async function processAttendeeWebhook(env: Env, payload: AttendeeWebhookP
 
   return { duplicate: false, meetingId: meeting.id };
 }
+
+export const processAttendeeWebhook = processBotWebhook;
 
 export async function eligibleRecipientCount(env: Env, meetingId: string): Promise<number> {
   const attendees = await listMeetingAttendees(env.DB, meetingId);

@@ -7,6 +7,6 @@ type Params = { meetingId: string };
 
 export class MeetingWorkflow extends WorkflowEntrypoint<WorkflowEnv, Params> {
   async run(event: WorkflowEvent<Params>, step: WorkflowStep): Promise<void> {
-    await step.do("create Attendee bot", () => createMeetingBot(this.env, event.payload.meetingId));
+    await step.do("create meeting bot", () => createMeetingBot(this.env, event.payload.meetingId));
   }
 }

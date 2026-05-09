@@ -20,9 +20,9 @@ The admin console stores the entered token in browser local storage and sends it
 The API protects every `/api/*` route except:
 
 - `/api/health`
-- `/api/webhooks/attendee`
+- `/api/webhooks/bot`
 
-Attendee webhooks are still protected by `ATTENDEE_WEBHOOK_SECRET`.
+Meeting bot webhooks are still protected by `BOT_WEBHOOK_SECRET`.
 
 ## Cloudflare Access JWT Validation
 
@@ -41,17 +41,17 @@ Protect the admin UI with Cloudflare Access and add WAF custom rules for common 
 
 In the Cloudflare dashboard, add project-level IP blocks or custom WAF rules for known unwanted sources. Do not use WAF as the only admin protection; the admin token is the access-control layer.
 
-Add a narrow skip rule before any challenge/block rules so Attendee webhook delivery reaches the Worker:
+Add a narrow skip rule before any challenge/block rules so meeting bot webhook delivery reaches the Worker:
 
 ```text
-http.host eq "admin.minutes.bot" and http.request.uri.path eq "/api/webhooks/attendee" and http.request.method eq "POST"
+http.host eq "admin.minutes.bot" and http.request.uri.path eq "/api/webhooks/bot" and http.request.method eq "POST"
 ```
 
 The rule should use Cloudflare's `skip` action for browser/security challenges only on that exact POST endpoint. In ruleset JSON, minutesbot applies:
 
 ```json
 {
-  "ref": "minutesbot_attendee_webhook_security_exception",
+  "ref": "minutesbot_bot_webhook_security_exception",
   "action": "skip",
   "action_parameters": {
     "ruleset": "current",
@@ -61,7 +61,7 @@ The rule should use Cloudflare's `skip` action for browser/security challenges o
 }
 ```
 
-This does not make the webhook unauthenticated. `/api/webhooks/attendee` still verifies Attendee's `X-Webhook-Signature` with `ATTENDEE_WEBHOOK_SECRET`, and unsigned POSTs should return `401 INVALID_WEBHOOK_SIGNATURE` from the Worker instead of a Cloudflare HTML challenge page.
+This does not make the webhook unauthenticated. `/api/webhooks/bot` still verifies the meeting bot `X-Webhook-Signature` with `BOT_WEBHOOK_SECRET`, and unsigned POSTs should return `401 INVALID_WEBHOOK_SIGNATURE` from the Worker instead of a Cloudflare HTML challenge page.
 
 To apply the exception with a Cloudflare API token that can edit zone rulesets:
 

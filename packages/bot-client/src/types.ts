@@ -1,4 +1,4 @@
-export const ATTENDEE_WEBHOOK_TRIGGERS = [
+export const BOT_WEBHOOK_TRIGGERS = [
   "bot.state_change",
   "transcript.update",
   "chat_messages.update",
@@ -6,10 +6,11 @@ export const ATTENDEE_WEBHOOK_TRIGGERS = [
   "participant_events.speech_start_stop",
   "bot_logs.update"
 ] as const;
+export const ATTENDEE_WEBHOOK_TRIGGERS = BOT_WEBHOOK_TRIGGERS;
 
-export type AttendeeWebhookTrigger = (typeof ATTENDEE_WEBHOOK_TRIGGERS)[number];
+export type BotWebhookTrigger = (typeof BOT_WEBHOOK_TRIGGERS)[number];
 
-export type CreateAttendeeBotInput = {
+export type CreateBotInput = {
   meetingUrl: string;
   botName: string;
   recordingSettings?: {
@@ -26,13 +27,13 @@ export type CreateAttendeeBotInput = {
   };
   webhooks?: Array<{
     url: string;
-    triggers: AttendeeWebhookTrigger[];
+    triggers: BotWebhookTrigger[];
   }>;
   metadata?: Record<string, unknown>;
   rawOverrides?: Record<string, unknown>;
 };
 
-export type AttendeeBot = {
+export type BotRun = {
   id: string;
   meeting_url: string;
   state: string;
@@ -40,19 +41,19 @@ export type AttendeeBot = {
   recording_state?: string;
 };
 
-export type AttendeeRecording = {
+export type BotRecording = {
   data: ArrayBuffer;
   contentType: string;
   sizeBytes?: number;
 };
 
-export type AttendeeHealth = {
+export type BotHealth = {
   ok: boolean;
   runtime?: string;
   missing?: string[];
 };
 
-export type AttendeeTranscriptSegment = {
+export type BotTranscriptSegment = {
   speaker_name?: string;
   speaker_uuid?: string;
   speaker_user_uuid?: string;
@@ -61,8 +62,16 @@ export type AttendeeTranscriptSegment = {
   transcription: string | { transcript?: string; words?: unknown };
 };
 
-export type AttendeeClientOptions = {
+export type BotClientOptions = {
   baseUrl: string;
   apiKey: string;
   fetcher?: typeof fetch;
 };
+
+export type AttendeeWebhookTrigger = BotWebhookTrigger;
+export type CreateAttendeeBotInput = CreateBotInput;
+export type AttendeeBot = BotRun;
+export type AttendeeRecording = BotRecording;
+export type AttendeeHealth = BotHealth;
+export type AttendeeTranscriptSegment = BotTranscriptSegment;
+export type AttendeeClientOptions = BotClientOptions;

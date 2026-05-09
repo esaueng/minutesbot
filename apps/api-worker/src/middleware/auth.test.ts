@@ -12,8 +12,9 @@ describe("auth middleware", () => {
     clearCloudflareAccessJwksCacheForTests();
   });
 
-  it("leaves health and attendee webhook routes public", () => {
+  it("leaves health and meeting bot webhook routes public", () => {
     expect(isPublicApiPath("/api/health")).toBe(true);
+    expect(isPublicApiPath("/api/webhooks/bot")).toBe(true);
     expect(isPublicApiPath("/api/webhooks/attendee")).toBe(true);
     expect(isPublicApiPath("/api/settings")).toBe(false);
   });

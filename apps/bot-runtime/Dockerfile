@@ -1,0 +1,21 @@
+FROM mcr.microsoft.com/playwright:v1.49.1-jammy
+
+WORKDIR /app
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY packages ./packages
+COPY apps/bot-runtime ./apps/bot-runtime
+
+RUN corepack enable \
+  && corepack prepare pnpm@9.15.4 --activate \
+  && pnpm install --frozen-lockfile \
+  && pnpm --filter @minutesbot/bot-runtime build
+
+ENV PORT=8787
+EXPOSE 8787
+
+CMD ["pnpm", "--filter", "@minutesbot/bot-runtime", "exec", "tsx", "src/server.ts"]

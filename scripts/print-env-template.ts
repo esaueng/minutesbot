@@ -3,27 +3,17 @@ CLOUDFLARE_ACCOUNT_ID=
 CLOUDFLARE_ENV=production
 APP_BASE_URL=https://admin.minutes.bot
 API_BASE_URL=https://api.minutes.bot
-ATTENDEE_WEBHOOK_BASE_URL=https://admin.minutes.bot
-ATTENDEE_API_BASE_URL=https://attendee.company.com
-ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME=minutesbot-artifacts
+BOT_WEBHOOK_BASE_URL=https://admin.minutes.bot
+BOT_API_BASE_URL=https://meeting-bot.company.com
+BOT_RECORDING_BUCKET_NAME=minutesbot-artifacts
 DEFAULT_RECORDER_EMAIL=notetaker@minutes.bot
 DEFAULT_SENDER_EMAIL=notetaker@minutes.bot
 ENVIRONMENT=production
-ATTENDEE_API_KEY=
-ATTENDEE_WEBHOOK_SECRET=
+BOT_API_KEY=
+BOT_WEBHOOK_SECRET=
 OPENROUTER_API_KEY=
 SESSION_SECRET=
 
-# Attendee Cloudflare Container router
-DATABASE_URL=postgres://...
-REDIS_URL=redis://...
-DJANGO_SECRET_KEY=
-CREDENTIALS_ENCRYPTION_KEY=
-R2_ACCOUNT_ID=
-R2_ACCESS_KEY_ID=
-R2_SECRET_ACCESS_KEY=
-R2_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com
-R2_RECORDING_BUCKET_NAME=minutesbot-artifacts
-DEEPGRAM_API_KEY=
-ZOOM_CLIENT_ID=
-ZOOM_CLIENT_SECRET=`);
+# Meeting bot container
+TEAMS_RECORDER_EMAIL=notetaker@company.com
+TEAMS_RECORDER_PASSWORD=`);

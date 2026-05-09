@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildAttendeeWranglerConfig,
+  buildBotWranglerConfig,
   buildMinutesbotWranglerConfig,
   deployOneshot,
   parseEnvFile,
@@ -50,7 +50,7 @@ describe("validateOneshotEnv", () => {
 describe("build oneshot Wrangler configs", () => {
   it("uses env-provided routes and removes WGS-specific defaults", () => {
     const minutesbotConfig = buildMinutesbotWranglerConfig(sampleEnv(), "production");
-    const attendeeConfig = buildAttendeeWranglerConfig(sampleEnv());
+    const botConfig = buildBotWranglerConfig(sampleEnv());
 
     expect(minutesbotConfig).toContain("app.minutes.bot");
     expect(minutesbotConfig).toContain("admin.minutes.bot");
@@ -58,17 +58,20 @@ describe("build oneshot Wrangler configs", () => {
     expect(minutesbotConfig).not.toContain("CLOUDFLARE_ACCESS_AUD");
     expect(minutesbotConfig).not.toContain("CLOUDFLARE_ACCESS_JWKS_URL");
     expect(minutesbotConfig).not.toContain("CLOUDFLARE_ACCESS_ISSUER");
-    expect(attendeeConfig).toContain("attendee.company.com");
+    expect(botConfig).toContain("meeting-bot.company.com");
+    expect(botConfig).toContain("../apps/bot-runtime/Dockerfile");
+    expect(botConfig).not.toContain(".attendee/upstream");
+    expect(botConfig).not.toContain("DJANGO_SETTINGS_MODULE");
     expect(minutesbotConfig).toContain('"workers_dev": false');
-    expect(attendeeConfig).toContain('"workers_dev": false');
+    expect(botConfig).toContain('"workers_dev": false');
     expect((minutesbotConfig.match(/"custom_domain": true/g) ?? []).length).toBe(1);
     expect(minutesbotConfig).toContain('"producers"');
     expect(minutesbotConfig).not.toContain('"consumers"');
     expect(minutesbotConfig).not.toContain("notes.company.com");
     expect(minutesbotConfig).not.toContain("api.company.com");
     expect(minutesbotConfig).not.toContain("webhook.company.com");
-    expect(`${minutesbotConfig}\n${attendeeConfig}`).not.toContain("wgsglobal");
-    expect(`${minutesbotConfig}\n${attendeeConfig}`).not.toContain("wgs.bot");
+    expect(`${minutesbotConfig}\n${botConfig}`).not.toContain("wgsglobal");
+    expect(`${minutesbotConfig}\n${botConfig}`).not.toContain("wgs.bot");
   });
 });
 
@@ -102,7 +105,7 @@ describe("deployOneshot", () => {
     expect(commands).toEqual([]);
     expect([...writes.keys()]).toEqual([]);
     expect(messages).toContain("[dry-run] deploy minutesbot Worker");
-    expect(messages).toContain("[dry-run] put Attendee container secret DATABASE_URL");
+    expect(messages).toContain("[dry-run] put meeting bot container secret BOT_API_KEY");
   });
 
   it("runs the deploy flow with generated configs, secrets, health checks, and smoke checks", async () => {
@@ -140,20 +143,20 @@ describe("deployOneshot", () => {
     expect(commands).toContain("pnpm --version");
     expect(commands).toContain("wrangler whoami");
     expect(commands).toContain("docker info");
-    expect(commands).toContain("pnpm attendee:prepare");
-    expect(commands).toContain("wrangler deploy --config .wrangler/oneshot-attendee.jsonc");
+    expect(commands).not.toContain("pnpm attendee:prepare");
+    expect(commands).toContain("wrangler deploy --config .wrangler/oneshot-bot.jsonc");
     expect(commands).toContain("pnpm run build");
     expect(commands).toContain("wrangler deploy --config .wrangler/oneshot-minutesbot.jsonc");
-    expect(secrets).toContain("wrangler secret put DATABASE_URL --config .wrangler/oneshot-attendee.jsonc");
-    expect(secrets).toContain("wrangler secret put ATTENDEE_API_KEY --config .wrangler/oneshot-minutesbot.jsonc");
-    expect(fetches).toContain("GET https://attendee.company.com/_ops/health");
-    expect(fetches).toContain("POST https://attendee.company.com/_ops/start-workers");
+    expect(secrets).toContain("wrangler secret put BOT_API_KEY --config .wrangler/oneshot-bot.jsonc");
+    expect(secrets).toContain("wrangler secret put TEAMS_RECORDER_PASSWORD --config .wrangler/oneshot-bot.jsonc");
+    expect(secrets).toContain("wrangler secret put BOT_API_KEY --config .wrangler/oneshot-minutesbot.jsonc");
+    expect(fetches).toContain("GET https://meeting-bot.company.com/_ops/health");
     expect(fetches).toContain("GET https://api.minutes.bot/api/health");
     expect(fetches).toContain("POST https://api.minutes.bot/api/admin/test-r2");
-    expect(fetches).toContain("POST https://api.minutes.bot/api/admin/test-attendee");
-    expect(fetches).toContain("POST https://admin.minutes.bot/api/webhooks/attendee");
+    expect(fetches).toContain("POST https://api.minutes.bot/api/admin/test-bot");
+    expect(fetches).toContain("POST https://admin.minutes.bot/api/webhooks/bot");
     expect([...writes.keys()]).toContain(".wrangler/oneshot-minutesbot.jsonc");
-    expect([...writes.keys()]).toContain(".wrangler/oneshot-attendee.jsonc");
+    expect([...writes.keys()]).toContain(".wrangler/oneshot-bot.jsonc");
   });
 });
 
@@ -163,27 +166,17 @@ function sampleEnv(overrides: Record<string, string> = {}): Record<string, strin
     CLOUDFLARE_ENV: "production",
     APP_BASE_URL: "https://admin.minutes.bot",
     API_BASE_URL: "https://api.minutes.bot",
-    ATTENDEE_WEBHOOK_BASE_URL: "https://admin.minutes.bot",
-    ATTENDEE_API_BASE_URL: "https://attendee.company.com",
-    ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME: "minutesbot-artifacts",
+    BOT_WEBHOOK_BASE_URL: "https://admin.minutes.bot",
+    BOT_API_BASE_URL: "https://meeting-bot.company.com",
+    BOT_RECORDING_BUCKET_NAME: "minutesbot-artifacts",
     DEFAULT_RECORDER_EMAIL: "notetaker@minutes.bot",
     DEFAULT_SENDER_EMAIL: "notetaker@minutes.bot",
-    DATABASE_URL: "postgres://user:pass@db.example.com:5432/attendee",
-    REDIS_URL: "redis://redis.example.com:6379",
-    DJANGO_SECRET_KEY: "django-secret",
-    CREDENTIALS_ENCRYPTION_KEY: "credentials-secret",
-    R2_ACCOUNT_ID: "r2-account",
-    R2_ACCESS_KEY_ID: "r2-access",
-    R2_SECRET_ACCESS_KEY: "r2-secret",
-    R2_ENDPOINT_URL: "https://r2-account.r2.cloudflarestorage.com",
-    R2_RECORDING_BUCKET_NAME: "minutesbot-artifacts",
-    ATTENDEE_API_KEY: "attendee-api-key",
-    ATTENDEE_WEBHOOK_SECRET: Buffer.from("webhook-secret").toString("base64"),
-    DEEPGRAM_API_KEY: "deepgram-key",
+    BOT_API_KEY: "bot-api-key",
+    BOT_WEBHOOK_SECRET: Buffer.from("webhook-secret").toString("base64"),
+    TEAMS_RECORDER_EMAIL: "notetaker@company.com",
+    TEAMS_RECORDER_PASSWORD: "teams-recorder-password",
     OPENROUTER_API_KEY: "openrouter-key",
     SESSION_SECRET: "session-secret",
-    ZOOM_CLIENT_ID: "zoom-client-id",
-    ZOOM_CLIENT_SECRET: "zoom-client-secret",
     ...overrides
   };
 }

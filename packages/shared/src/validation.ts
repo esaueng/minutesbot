@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const legacySelfHostedAttendeeBaseUrls = new Set<string>();
+const legacySelfHostedBotBaseUrls = new Set<string>(["https://app.attendee.dev"]);
 const defaultTimeZone = "UTC";
 
 const domainSchema = z
@@ -182,7 +182,7 @@ export const defaultSettings: AppSettings = {
   recorderEmail: "notetaker@minutes.bot",
   recorderAliasEmails: [],
   attendee: {
-    baseUrl: "https://app.attendee.dev",
+    baseUrl: "https://meeting-bot.company.com",
     apiKeyConfigured: false,
     webhookSecretConfigured: false,
     botName: "minutesbot",
@@ -292,7 +292,9 @@ function normalizeEnabledTemplates(templates: AppSettings["recap"]["enabledTempl
   return recapTemplateKeys.filter((key) => enabled.has(key));
 }
 
-export function resolveAttendeeBaseUrl(settingsBaseUrl: string, envBaseUrl?: string): string {
-  if (legacySelfHostedAttendeeBaseUrls.has(settingsBaseUrl.replace(/\/+$/, "")) && envBaseUrl) return envBaseUrl;
+export function resolveBotBaseUrl(settingsBaseUrl: string, envBaseUrl?: string): string {
+  if (legacySelfHostedBotBaseUrls.has(settingsBaseUrl.replace(/\/+$/, "")) && envBaseUrl) return envBaseUrl;
   return settingsBaseUrl || envBaseUrl || defaultSettings.attendee.baseUrl;
 }
+
+export const resolveAttendeeBaseUrl = resolveBotBaseUrl;

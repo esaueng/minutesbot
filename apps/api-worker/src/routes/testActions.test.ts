@@ -41,7 +41,7 @@ function env(overrides: Partial<Env> = {}): Env {
     EMAIL_QUEUE: { send: async () => undefined },
     APP_BASE_URL: "https://minutesbot.example.com",
     API_BASE_URL: "https://minutesbot.example.com",
-    ATTENDEE_API_BASE_URL: "https://attendee.example.com",
+    BOT_API_BASE_URL: "https://meeting-bot.example.com",
     DEFAULT_RECORDER_EMAIL: "notetaker@example.com",
     DEFAULT_SENDER_EMAIL: "notetaker@example.com",
     ENVIRONMENT: "test",
@@ -67,19 +67,19 @@ describe("admin test actions", () => {
     vi.unstubAllGlobals();
   });
 
-  it("reports the dedicated Attendee webhook URL separately from the API base URL", async () => {
+  it("reports the dedicated meeting bot webhook URL separately from the API base URL", async () => {
     const response = await app.request(
       "/api/admin/status",
       { headers: { authorization: "Bearer test-secret" } },
       env({
         API_BASE_URL: "https://minutesbot.example.com",
-        ATTENDEE_WEBHOOK_BASE_URL: "https://minutesbot-webhook.wgsglobal.app"
+        BOT_WEBHOOK_BASE_URL: "https://minutesbot-webhook.wgsglobal.app"
       })
     );
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      webhookUrl: "https://minutesbot-webhook.wgsglobal.app/api/webhooks/attendee"
+      webhookUrl: "https://minutesbot-webhook.wgsglobal.app/api/webhooks/bot"
     });
   });
 
@@ -213,82 +213,83 @@ describe("admin test actions", () => {
     });
   });
 
-  it("calls Attendee when testing Attendee auth without returning the secret", async () => {
+  it("calls the meeting bot runtime when testing runtime auth without returning the secret", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     vi.stubGlobal(
       "fetch",
       vi
         .fn(async (url: string | URL | Request, init?: RequestInit) => {
           requests.push({ url: String(url), init });
+          if (String(url).endsWith("/_ops/health")) return Response.json({ ok: true, runtime: "meeting-bot-container", missing: [] });
           if (String(url).endsWith("/minutesbot-preflight")) return new Response("not found", { status: 404 });
           return Response.json({ id: "bot_1", meeting_url: "https://teams.microsoft.com/l/meetup-join/test", state: "ready" });
         })
     );
 
-    const response = await post("/api/admin/test-attendee", env({ ATTENDEE_API_KEY: "attendee-secret" }));
+    const response = await post("/api/admin/test-bot", env({ BOT_API_KEY: "bot-secret" }));
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       ok: true,
-      message: "Attendee API connection succeeded",
-      attendee: {
+      message: "Meeting bot runtime connection succeeded",
+      botRuntime: {
         baseUrl: defaultSettings.attendee.baseUrl
       }
     });
     expect(requests).toHaveLength(2);
-    expect(requests[0].url).toBe(`${defaultSettings.attendee.baseUrl}/api/v1/bots/minutesbot-preflight`);
+    expect(requests[0].url).toBe(`${defaultSettings.attendee.baseUrl}/_ops/health`);
     expect(requests[1].url).toBe(`${defaultSettings.attendee.baseUrl}/api/v1/bots/minutesbot-preflight`);
-    expect(requests[1].init?.headers).toMatchObject({ authorization: "Token attendee-secret" });
+    expect(requests[1].init?.headers).toMatchObject({ authorization: "Token bot-secret" });
   });
 
-  it("returns a redacted Attendee auth failure", async () => {
+  it("returns a redacted meeting bot auth failure", async () => {
     vi.stubGlobal(
       "fetch",
       vi
         .fn()
-        .mockResolvedValueOnce(Response.json({ ok: true, runtime: "cloudflare-containers", missing: [] }))
-        .mockResolvedValueOnce(new Response("nope attendee-secret", { status: 401 }))
+        .mockResolvedValueOnce(Response.json({ ok: true, runtime: "meeting-bot-container", missing: [] }))
+        .mockResolvedValueOnce(new Response("nope bot-secret", { status: 401 }))
     );
 
-    const response = await post("/api/admin/test-attendee", env({ ATTENDEE_API_KEY: "attendee-secret" }));
+    const response = await post("/api/admin/test-bot", env({ BOT_API_KEY: "bot-secret" }));
 
     expect(response.status).toBe(502);
     await expect(response.json()).resolves.toEqual({
       ok: false,
-      message: "ATTENDEE_AUTH_FAILED: Attendee request failed with 401"
+      message: "BOT_AUTH_FAILED: Meeting bot request failed with 401"
     });
   });
 
-  it("returns Attendee health failures with missing runtime settings", async () => {
+  it("returns meeting bot health failures with missing runtime settings", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
-        new Response(JSON.stringify({ ok: false, runtime: "cloudflare-containers", missing: ["DATABASE_URL", "REDIS_URL"] }), {
+        new Response(JSON.stringify({ ok: false, runtime: "meeting-bot-container", missing: ["TEAMS_RECORDER_PASSWORD", "ffmpeg"] }), {
           status: 503,
           headers: { "content-type": "application/json" }
         })
       )
     );
 
-    const testEnv = env({ ATTENDEE_API_BASE_URL: "https://attendee.wgsglobal.app", ATTENDEE_API_KEY: "attendee-secret" });
+    const testEnv = env({ BOT_API_BASE_URL: "https://meeting-bot.wgsglobal.app", BOT_API_KEY: "bot-secret" });
     await testEnv.DB.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)").bind(
       "app",
       JSON.stringify({
         ...defaultSettings,
         attendee: {
           ...defaultSettings.attendee,
-          baseUrl: "https://attendee.wgsglobal.app"
+          baseUrl: "https://meeting-bot.wgsglobal.app"
         }
       }),
       new Date().toISOString()
     ).run();
 
-    const response = await post("/api/admin/test-attendee", testEnv);
+    const response = await post("/api/admin/test-bot", testEnv);
 
     expect(response.status).toBe(502);
     await expect(response.json()).resolves.toEqual({
       ok: false,
-      message: "ATTENDEE_UNHEALTHY: Attendee health check failed: missing DATABASE_URL, REDIS_URL"
+      message: "BOT_UNHEALTHY: Meeting bot health check failed: missing TEAMS_RECORDER_PASSWORD, ffmpeg"
     });
   });
 });

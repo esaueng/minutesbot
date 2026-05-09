@@ -10,7 +10,6 @@ import {
   type RequiredCloudflareResources,
   type RunCommand
 } from "./ensure-cloudflare-resources";
-import { verifyAttendeeHealth } from "./deploy-attendee";
 
 export type RunCommandWithInput = (command: string, args: string[], input: string) => Promise<string | void>;
 
@@ -32,38 +31,28 @@ type OneshotDeployOptions = {
 type OneshotEnv = Record<string, string>;
 
 const GENERATED_MINUTESBOT_CONFIG = ".wrangler/oneshot-minutesbot.jsonc";
-const GENERATED_ATTENDEE_CONFIG = ".wrangler/oneshot-attendee.jsonc";
+const GENERATED_BOT_CONFIG = ".wrangler/oneshot-bot.jsonc";
 const WORKER_CUSTOM_DOMAIN = "app.minutes.bot";
 const EXPECTED_APP_BASE_DOMAIN = "admin.minutes.bot";
 const EXPECTED_API_BASE_DOMAIN = "api.minutes.bot";
-const EXPECTED_ATTENDEE_WEBHOOK_DOMAIN = "admin.minutes.bot";
+const EXPECTED_BOT_WEBHOOK_DOMAIN = "admin.minutes.bot";
 
 const REQUIRED_ENV_KEYS = [
   "CLOUDFLARE_ACCOUNT_ID",
   "CLOUDFLARE_ENV",
   "APP_BASE_URL",
   "API_BASE_URL",
-  "ATTENDEE_WEBHOOK_BASE_URL",
-  "ATTENDEE_API_BASE_URL",
-  "ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME",
+  "BOT_WEBHOOK_BASE_URL",
+  "BOT_API_BASE_URL",
+  "BOT_RECORDING_BUCKET_NAME",
   "DEFAULT_RECORDER_EMAIL",
   "DEFAULT_SENDER_EMAIL",
-  "DATABASE_URL",
-  "REDIS_URL",
-  "DJANGO_SECRET_KEY",
-  "CREDENTIALS_ENCRYPTION_KEY",
-  "R2_ACCOUNT_ID",
-  "R2_ACCESS_KEY_ID",
-  "R2_SECRET_ACCESS_KEY",
-  "R2_ENDPOINT_URL",
-  "R2_RECORDING_BUCKET_NAME",
-  "ATTENDEE_API_KEY",
-  "ATTENDEE_WEBHOOK_SECRET",
-  "DEEPGRAM_API_KEY",
+  "BOT_API_KEY",
+  "BOT_WEBHOOK_SECRET",
+  "TEAMS_RECORDER_EMAIL",
+  "TEAMS_RECORDER_PASSWORD",
   "OPENROUTER_API_KEY",
-  "SESSION_SECRET",
-  "ZOOM_CLIENT_ID",
-  "ZOOM_CLIENT_SECRET"
+  "SESSION_SECRET"
 ] as const;
 
 export async function deployOneshot(options: OneshotDeployOptions = {}): Promise<void> {
@@ -79,12 +68,12 @@ export async function deployOneshot(options: OneshotDeployOptions = {}): Promise
   validateOneshotEnv(env, environment);
 
   const minutesbotConfig = buildMinutesbotWranglerConfig(env, environment);
-  const attendeeConfig = buildAttendeeWranglerConfig(env);
+  const botConfig = buildBotWranglerConfig(env);
   const resources = resourceNames(environment, env);
 
   await validatePrerequisites({ runCommand, dryRun, log });
   await writeGeneratedConfig(GENERATED_MINUTESBOT_CONFIG, minutesbotConfig, options, dryRun, log);
-  await writeGeneratedConfig(GENERATED_ATTENDEE_CONFIG, attendeeConfig, options, dryRun, log);
+  await writeGeneratedConfig(GENERATED_BOT_CONFIG, botConfig, options, dryRun, log);
 
   await runOrLog(dryRun, log, "ensure Cloudflare resources", async () => {
     await ensureCloudflareResources({
@@ -99,29 +88,21 @@ export async function deployOneshot(options: OneshotDeployOptions = {}): Promise
     });
   });
 
-  await runOrLog(dryRun, log, "prepare upstream Attendee checkout", async () => {
-    await runCommand("pnpm", ["attendee:prepare"]);
-  });
-
   await putSecrets({
-    label: "Attendee container",
-    configPath: GENERATED_ATTENDEE_CONFIG,
-    secrets: attendeeSecrets(env),
+    label: "meeting bot container",
+    configPath: GENERATED_BOT_CONFIG,
+    secrets: botContainerSecrets(env),
     dryRun,
     runCommandWithInput,
     log
   });
 
-  await runOrLog(dryRun, log, "deploy Attendee container Worker", async () => {
-    await runCommand("wrangler", ["deploy", "--config", GENERATED_ATTENDEE_CONFIG]);
+  await runOrLog(dryRun, log, "deploy meeting bot container Worker", async () => {
+    await runCommand("wrangler", ["deploy", "--config", GENERATED_BOT_CONFIG]);
   });
 
-  await runOrLog(dryRun, log, "check Attendee health", async () => {
-    await verifyAttendeeHealth({ baseUrl: env.ATTENDEE_API_BASE_URL, fetchHealth, log, error });
-  });
-
-  await runOrLog(dryRun, log, "start Attendee background containers", async () => {
-    await postJson(fetchHealth, `${trimUrl(env.ATTENDEE_API_BASE_URL)}/_ops/start-workers`);
+  await runOrLog(dryRun, log, "check meeting bot health", async () => {
+    await verifyBotHealth({ baseUrl: env.BOT_API_BASE_URL, fetchHealth, log, error });
   });
 
   await putSecrets({
@@ -181,13 +162,13 @@ export function validateOneshotEnv(env: Record<string, string | undefined>, envi
   if (env.CLOUDFLARE_ENV !== environment) {
     throw new Error(`CLOUDFLARE_ENV must match --env. Got "${env.CLOUDFLARE_ENV}" and "${environment}".`);
   }
-  for (const key of ["APP_BASE_URL", "API_BASE_URL", "ATTENDEE_WEBHOOK_BASE_URL", "ATTENDEE_API_BASE_URL", "R2_ENDPOINT_URL"] as const) {
+  for (const key of ["APP_BASE_URL", "API_BASE_URL", "BOT_WEBHOOK_BASE_URL", "BOT_API_BASE_URL"] as const) {
     assertUrl(key, env[key] ?? "");
   }
   assertUrlHostname("APP_BASE_URL", env.APP_BASE_URL ?? "", EXPECTED_APP_BASE_DOMAIN);
   assertUrlHostname("API_BASE_URL", env.API_BASE_URL ?? "", EXPECTED_API_BASE_DOMAIN);
-  assertUrlHostname("ATTENDEE_WEBHOOK_BASE_URL", env.ATTENDEE_WEBHOOK_BASE_URL ?? "", EXPECTED_ATTENDEE_WEBHOOK_DOMAIN);
-  for (const key of ["DEFAULT_RECORDER_EMAIL", "DEFAULT_SENDER_EMAIL"] as const) {
+  assertUrlHostname("BOT_WEBHOOK_BASE_URL", env.BOT_WEBHOOK_BASE_URL ?? "", EXPECTED_BOT_WEBHOOK_DOMAIN);
+  for (const key of ["DEFAULT_RECORDER_EMAIL", "DEFAULT_SENDER_EMAIL", "TEAMS_RECORDER_EMAIL"] as const) {
     if (!(env[key] ?? "").includes("@")) throw new Error(`${key} must be an email address.`);
   }
 }
@@ -213,15 +194,15 @@ export function buildMinutesbotWranglerConfig(env: OneshotEnv, environment: Clou
     vars: {
       APP_BASE_URL: env.APP_BASE_URL,
       API_BASE_URL: env.API_BASE_URL,
-      ATTENDEE_WEBHOOK_BASE_URL: env.ATTENDEE_WEBHOOK_BASE_URL,
-      ATTENDEE_API_BASE_URL: env.ATTENDEE_API_BASE_URL,
-      ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME: env.ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME,
+      BOT_WEBHOOK_BASE_URL: env.BOT_WEBHOOK_BASE_URL,
+      BOT_API_BASE_URL: env.BOT_API_BASE_URL,
+      BOT_RECORDING_BUCKET_NAME: env.BOT_RECORDING_BUCKET_NAME,
       DEFAULT_RECORDER_EMAIL: env.DEFAULT_RECORDER_EMAIL,
       DEFAULT_SENDER_EMAIL: env.DEFAULT_SENDER_EMAIL,
       ENVIRONMENT: environment
     },
     d1_databases: [{ binding: resources.d1.binding, database_name: resources.d1.databaseName, database_id: "replace-with-d1-database-id" }],
-    r2_buckets: [{ binding: "ARTIFACTS", bucket_name: env.ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME }],
+    r2_buckets: [{ binding: "ARTIFACTS", bucket_name: env.BOT_RECORDING_BUCKET_NAME }],
     queues: queueConfig(resources.queues),
     workflows: [
       { name: scopedName("minutesbot-meeting-workflow", environment), binding: "MEETING_WORKFLOW", class_name: "MeetingWorkflow" },
@@ -233,36 +214,33 @@ export function buildMinutesbotWranglerConfig(env: OneshotEnv, environment: Clou
   });
 }
 
-export function buildAttendeeWranglerConfig(env: OneshotEnv): string {
+export function buildBotWranglerConfig(env: OneshotEnv): string {
   return stringifyConfig({
     $schema: "../node_modules/wrangler/config-schema.json",
-    name: "minutesbot-attendee",
+    name: "minutesbot-meeting-bot",
     account_id: env.CLOUDFLARE_ACCOUNT_ID,
-    main: "../deploy/attendee-container/src/index.ts",
+    main: "../deploy/bot-container/src/index.ts",
     compatibility_date: "2026-05-04",
     compatibility_flags: ["nodejs_compat"],
     observability: { enabled: true, head_sampling_rate: 1 },
     workers_dev: false,
-    routes: uniqueRoutes([env.ATTENDEE_API_BASE_URL]),
+    routes: uniqueRoutes([env.BOT_API_BASE_URL]),
     vars: {
-      DJANGO_SETTINGS_MODULE: "attendee.settings.production",
-      ATTENDEE_WEB_INSTANCES: "1",
-      ATTENDEE_CONTAINER_SLEEP_AFTER: "24h"
+      BOT_CONTAINER_SLEEP_AFTER: "24h",
+      BOT_API_BASE_URL: env.BOT_API_BASE_URL,
+      BOT_RECORDING_BUCKET_NAME: env.BOT_RECORDING_BUCKET_NAME,
+      TEAMS_RECORDER_EMAIL: env.TEAMS_RECORDER_EMAIL,
+      BOT_WEBHOOK_BASE_URL: env.BOT_WEBHOOK_BASE_URL
     },
     containers: [
-      { class_name: "AttendeeWebContainer", image: "../.attendee/upstream/Dockerfile", max_instances: 2, instance_type: "standard-2" },
-      { class_name: "AttendeeWorkerContainer", image: "../.attendee/upstream/Dockerfile", max_instances: 1, instance_type: "standard-2" },
-      { class_name: "AttendeeSchedulerContainer", image: "../.attendee/upstream/Dockerfile", max_instances: 1, instance_type: "basic" }
+      { class_name: "MeetingBotContainer", image: "../apps/bot-runtime/Dockerfile", max_instances: 2, instance_type: "standard-2" }
     ],
     durable_objects: {
       bindings: [
-        { name: "ATTENDEE_WEB", class_name: "AttendeeWebContainer" },
-        { name: "ATTENDEE_WORKER", class_name: "AttendeeWorkerContainer" },
-        { name: "ATTENDEE_SCHEDULER", class_name: "AttendeeSchedulerContainer" }
+        { name: "MEETING_BOT", class_name: "MeetingBotContainer" }
       ]
     },
-    migrations: [{ tag: "v1", new_sqlite_classes: ["AttendeeWebContainer", "AttendeeWorkerContainer", "AttendeeSchedulerContainer"] }],
-    triggers: { crons: ["*/30 * * * *"] }
+    migrations: [{ tag: "v1", new_sqlite_classes: ["MeetingBotContainer"] }]
   });
 }
 
@@ -312,28 +290,18 @@ async function putSecrets(options: {
   }
 }
 
-function attendeeSecrets(env: OneshotEnv): Record<string, string> {
+function botContainerSecrets(env: OneshotEnv): Record<string, string> {
   return {
-    DATABASE_URL: env.DATABASE_URL,
-    REDIS_URL: env.REDIS_URL,
-    DJANGO_SECRET_KEY: env.DJANGO_SECRET_KEY,
-    CREDENTIALS_ENCRYPTION_KEY: env.CREDENTIALS_ENCRYPTION_KEY,
-    AWS_ACCESS_KEY_ID: env.R2_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY: env.R2_SECRET_ACCESS_KEY,
-    AWS_ENDPOINT_URL: env.R2_ENDPOINT_URL,
-    AWS_RECORDING_STORAGE_BUCKET_NAME: env.R2_RECORDING_BUCKET_NAME,
-    DEEPGRAM_API_KEY: env.DEEPGRAM_API_KEY,
-    OPENAI_API_KEY: env.OPENROUTER_API_KEY,
-    OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
-    ZOOM_CLIENT_ID: env.ZOOM_CLIENT_ID,
-    ZOOM_CLIENT_SECRET: env.ZOOM_CLIENT_SECRET
+    BOT_API_KEY: env.BOT_API_KEY,
+    BOT_WEBHOOK_SECRET: env.BOT_WEBHOOK_SECRET,
+    TEAMS_RECORDER_PASSWORD: env.TEAMS_RECORDER_PASSWORD
   };
 }
 
 function minutesbotSecrets(env: OneshotEnv): Record<string, string> {
   return {
-    ATTENDEE_API_KEY: env.ATTENDEE_API_KEY,
-    ATTENDEE_WEBHOOK_SECRET: env.ATTENDEE_WEBHOOK_SECRET,
+    BOT_API_KEY: env.BOT_API_KEY,
+    BOT_WEBHOOK_SECRET: env.BOT_WEBHOOK_SECRET,
     AI_API_KEY: env.OPENROUTER_API_KEY,
     SESSION_SECRET: env.SESSION_SECRET
   };
@@ -351,10 +319,10 @@ async function runSmokeChecks(options: {
   await runOrLog(options.dryRun, options.log, "smoke check R2 binding", async () => {
     await postJson(options.fetchHealth, `${trimUrl(options.env.API_BASE_URL)}/api/admin/test-r2`, options.env.SESSION_SECRET);
   });
-  await runOrLog(options.dryRun, options.log, "smoke check Attendee API auth", async () => {
-    await postJson(options.fetchHealth, `${trimUrl(options.env.API_BASE_URL)}/api/admin/test-attendee`, options.env.SESSION_SECRET);
+  await runOrLog(options.dryRun, options.log, "smoke check meeting bot API auth", async () => {
+    await postJson(options.fetchHealth, `${trimUrl(options.env.API_BASE_URL)}/api/admin/test-bot`, options.env.SESSION_SECRET);
   });
-  await runOrLog(options.dryRun, options.log, "smoke check signed Attendee webhook", async () => {
+  await runOrLog(options.dryRun, options.log, "smoke check signed meeting bot webhook", async () => {
     const payload = {
       idempotency_key: `oneshot-smoke-${Date.now()}`,
       bot_id: "minutesbot-oneshot-smoke",
@@ -362,11 +330,34 @@ async function runSmokeChecks(options: {
       data: { event_type: "smoke_check", new_state: "ended" }
     };
     const rawBody = stableStringify(payload);
-    const signature = await signWebhook(rawBody, options.env.ATTENDEE_WEBHOOK_SECRET);
-    await postJson(options.fetchHealth, `${trimUrl(options.env.ATTENDEE_WEBHOOK_BASE_URL)}/api/webhooks/attendee`, undefined, rawBody, {
+    const signature = await signWebhook(rawBody, options.env.BOT_WEBHOOK_SECRET);
+    await postJson(options.fetchHealth, `${trimUrl(options.env.BOT_WEBHOOK_BASE_URL)}/api/webhooks/bot`, undefined, rawBody, {
       "x-webhook-signature": signature
     });
   });
+}
+
+async function verifyBotHealth(options: {
+  baseUrl: string;
+  fetchHealth: typeof fetch;
+  log: (message: string) => void;
+  error: (message: string) => void;
+}): Promise<void> {
+  const url = `${trimUrl(options.baseUrl)}/_ops/health`;
+  let response: Response;
+  try {
+    response = await options.fetchHealth(url);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    options.error(`Meeting bot health check failed for ${url}: ${message}`);
+    throw new Error(`Meeting bot health check failed for ${url}: ${message}`);
+  }
+  if (!response.ok) {
+    const body = await response.text();
+    options.error(`Meeting bot health check returned ${response.status} for ${url}: ${body}`);
+    throw new Error(`Meeting bot health check returned ${response.status} for ${url}`);
+  }
+  options.log(`Meeting bot health check succeeded for ${url}.`);
 }
 
 async function getOk(fetcher: typeof fetch, url: string): Promise<void> {
@@ -412,7 +403,7 @@ function resourceNames(environment: CloudflareEnvironment, env: OneshotEnv): Req
   const suffix = environment === "production" ? "" : `-${environment}`;
   return {
     d1: { binding: "DB", databaseName: `minutesbot${suffix}` },
-    r2Buckets: [env.ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME],
+    r2Buckets: [env.BOT_RECORDING_BUCKET_NAME],
     queues: [`minutesbot${suffix}-invites`, `minutesbot${suffix}-summaries`, `minutesbot${suffix}-email`]
   };
 }

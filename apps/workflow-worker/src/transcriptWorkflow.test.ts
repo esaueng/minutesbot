@@ -8,8 +8,8 @@ const getBotTranscript = vi.fn();
 const deleteBotData = vi.fn();
 const transcribe = vi.fn();
 
-vi.mock("@minutesbot/attendee-client", () => ({
-  AttendeeClient: vi.fn(() => ({ getBotRecording, getBotTranscript, deleteBotData }))
+vi.mock("@minutesbot/bot-client", () => ({
+  BotClient: vi.fn(() => ({ getBotRecording, getBotTranscript, deleteBotData }))
 }));
 
 vi.mock("@minutesbot/summary-engine", async (importOriginal) => ({
@@ -79,7 +79,7 @@ describe("transcript workflow", () => {
     transcribe.mockReset();
   });
 
-  it("transcribes the expected R2 MP3 without calling Attendee transcript or recording endpoints", async () => {
+  it("transcribes the expected R2 MP3 without calling meeting bot transcript or recording endpoints", async () => {
     const db = new FakeD1();
     const audio = new Uint8Array([1, 2, 3]).buffer;
     const artifacts = r2WithRecording(audio);
@@ -153,10 +153,10 @@ function env(db: FakeD1, artifacts: { get: ReturnType<typeof vi.fn>; put: Return
     INVITE_QUEUE: { send: vi.fn() },
     SUMMARY_QUEUE: summaryQueue,
     EMAIL_QUEUE: { send: vi.fn() },
-    ATTENDEE_API_BASE_URL: "https://attendee.wgsglobal.app",
+    BOT_API_BASE_URL: "https://meeting-bot.wgsglobal.app",
     API_BASE_URL: "https://minutesbot-api.wgsglobal.app",
-    ATTENDEE_API_KEY: "attendee-key",
-    ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME: "minutesbot-artifacts",
+    BOT_API_KEY: "bot-key",
+    BOT_RECORDING_BUCKET_NAME: "minutesbot-artifacts",
     AI_API_KEY: "openrouter-key"
   };
 }

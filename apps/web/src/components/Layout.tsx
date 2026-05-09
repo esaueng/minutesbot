@@ -5,7 +5,7 @@ import { useAdminSession } from "../AuthGate";
 const nav: Array<{ route: RouteName; label: string; href: string }> = [
   { route: "setup", label: "Setup", href: "#/setup" },
   { route: "recap", label: "Recap", href: "#/recap" },
-  { route: "attendee", label: "Attendee", href: "#/attendee" },
+  { route: "bot", label: "Meeting Bot", href: "#/bot" },
   { route: "meetings", label: "Meetings", href: "#/meetings" },
   { route: "logs", label: "Logs", href: "#/logs" }
 ];

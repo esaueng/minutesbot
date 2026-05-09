@@ -1,19 +1,19 @@
-import { AttendeeClientError, retryableStatus } from "./errors";
-import type { AttendeeBot, AttendeeClientOptions, AttendeeHealth, AttendeeRecording, AttendeeTranscriptSegment, CreateAttendeeBotInput } from "./types";
+import { BotClientError, retryableStatus } from "./errors";
+import type { BotClientOptions, BotHealth, BotRecording, BotRun, BotTranscriptSegment, CreateBotInput } from "./types";
 
-export class AttendeeClient {
+export class BotClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly fetcher: typeof fetch;
 
-  constructor(options: AttendeeClientOptions) {
+  constructor(options: BotClientOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
     this.apiKey = options.apiKey;
     this.fetcher = options.fetcher ?? ((input, init) => globalThis.fetch(input, init));
   }
 
-  async createBot(input: CreateAttendeeBotInput): Promise<AttendeeBot> {
-    return this.request<AttendeeBot>("/api/v1/bots", {
+  async createBot(input: CreateBotInput): Promise<BotRun> {
+    return this.request<BotRun>("/api/v1/bots", {
       method: "POST",
       body: JSON.stringify({
         ...(input.rawOverrides ?? {}),
@@ -34,33 +34,29 @@ export class AttendeeClient {
     });
   }
 
-  async checkHealth(): Promise<AttendeeHealth> {
-    if (isHostedAttendee(this.baseUrl)) {
-      return this.checkHostedHealth();
-    }
-
-    const health = await this.request<AttendeeHealth>("/_ops/health", {}, mapHealthError);
-    if (!health.ok) throw new AttendeeClientError(healthFailureMessage(health), 503, true, "ATTENDEE_UNHEALTHY");
+  async checkHealth(): Promise<BotHealth> {
+    const health = await this.request<BotHealth>("/_ops/health", {}, mapHealthError);
+    if (!health.ok) throw new BotClientError(healthFailureMessage(health), 503, true, "BOT_UNHEALTHY");
     return health;
   }
 
-  async getBot(botId: string): Promise<AttendeeBot> {
-    return this.request<AttendeeBot>(`/api/v1/bots/${encodeURIComponent(botId)}`);
+  async getBot(botId: string): Promise<BotRun> {
+    return this.request<BotRun>(`/api/v1/bots/${encodeURIComponent(botId)}`);
   }
 
-  async getBotTranscript(botId: string, options: { force?: boolean } = {}): Promise<AttendeeTranscriptSegment[]> {
+  async getBotTranscript(botId: string, options: { force?: boolean } = {}): Promise<BotTranscriptSegment[]> {
     const params = new URLSearchParams();
     if (options.force) params.set("force", "true");
     const serializedParams = params.toString();
     const query = serializedParams ? `?${serializedParams}` : "";
-    return this.request<AttendeeTranscriptSegment[]>(`/api/v1/bots/${encodeURIComponent(botId)}/transcript${query}`);
+    return this.request<BotTranscriptSegment[]>(`/api/v1/bots/${encodeURIComponent(botId)}/transcript${query}`);
   }
 
-  async getBotRecording(botId: string): Promise<AttendeeRecording> {
+  async getBotRecording(botId: string): Promise<BotRecording> {
     const response = await this.rawRequest(`/api/v1/bots/${encodeURIComponent(botId)}/recording`);
     const contentType = response.headers.get("content-type") ?? "application/octet-stream";
     if (!isRecordingContentType(contentType)) {
-      throw new AttendeeClientError(`Attendee recording media is unavailable; received ${contentType}`, response.status, true, "ATTENDEE_RECORDING_UNAVAILABLE");
+      throw new BotClientError(`Meeting bot recording media is unavailable; received ${contentType}`, response.status, true, "BOT_RECORDING_UNAVAILABLE");
     }
     return {
       data: await response.arrayBuffer(),
@@ -92,27 +88,16 @@ export class AttendeeClient {
 
     if (!response.ok) {
       const retryable = retryableStatus(response.status);
-      let message = `Attendee request failed with ${response.status}`;
+      let message = `Meeting bot request failed with ${response.status}`;
       if (path === "/_ops/health") message = healthFailureMessage(await readHealthResponse(response));
-      throw new AttendeeClientError(message, response.status, retryable, errorMapper(response.status));
+      throw new BotClientError(message, response.status, retryable, errorMapper(response.status));
     }
 
     return response;
   }
-
-  private async checkHostedHealth(): Promise<AttendeeHealth> {
-    try {
-      await this.getBot("minutesbot-preflight");
-    } catch (error) {
-      if (error instanceof AttendeeClientError && error.code === "ATTENDEE_NOT_FOUND") {
-        return { ok: true, runtime: "attendee-hosted", missing: [] };
-      }
-      throw error;
-    }
-
-    return { ok: true, runtime: "attendee-hosted", missing: [] };
-  }
 }
+
+export { BotClient as AttendeeClient };
 
 function numberHeader(value: string | null): number | undefined {
   if (!value) return undefined;
@@ -130,27 +115,23 @@ export function normalizeBaseUrl(baseUrl: string): string {
 }
 
 function mapStatus(status: number): string {
-  if (status === 401 || status === 403) return "ATTENDEE_AUTH_FAILED";
-  if (status === 404) return "ATTENDEE_NOT_FOUND";
-  if (status === 409) return "ATTENDEE_CONFLICT";
-  if (status === 429) return "ATTENDEE_RATE_LIMITED";
-  if (status >= 500) return "ATTENDEE_UPSTREAM_ERROR";
-  return "ATTENDEE_REQUEST_FAILED";
+  if (status === 401 || status === 403) return "BOT_AUTH_FAILED";
+  if (status === 404) return "BOT_NOT_FOUND";
+  if (status === 409) return "BOT_CONFLICT";
+  if (status === 429) return "BOT_RATE_LIMITED";
+  if (status >= 500) return "BOT_UPSTREAM_ERROR";
+  return "BOT_REQUEST_FAILED";
 }
 
 function mapHealthError(_status: number): string {
-  return "ATTENDEE_UNHEALTHY";
+  return "BOT_UNHEALTHY";
 }
 
-function isHostedAttendee(baseUrl: string): boolean {
-  return new URL(baseUrl).hostname === "app.attendee.dev";
+async function readHealthResponse(response: Response): Promise<Partial<BotHealth>> {
+  return ((await response.clone().json().catch(() => ({}))) ?? {}) as Partial<BotHealth>;
 }
 
-async function readHealthResponse(response: Response): Promise<Partial<AttendeeHealth>> {
-  return ((await response.clone().json().catch(() => ({}))) ?? {}) as Partial<AttendeeHealth>;
-}
-
-function healthFailureMessage(health: Partial<AttendeeHealth>): string {
+function healthFailureMessage(health: Partial<BotHealth>): string {
   const missing = Array.isArray(health.missing) && health.missing.length > 0 ? `: missing ${health.missing.join(", ")}` : "";
-  return `Attendee health check failed${missing}`;
+  return `Meeting bot health check failed${missing}`;
 }

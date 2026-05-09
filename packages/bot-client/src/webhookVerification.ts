@@ -6,7 +6,7 @@ export type VerifyWebhookSignatureInput = {
   signature: string | null;
 };
 
-export async function verifyAttendeeWebhookSignature(input: VerifyWebhookSignatureInput): Promise<boolean> {
+export async function verifyBotWebhookSignature(input: VerifyWebhookSignatureInput): Promise<boolean> {
   if (!input.signature) return false;
   let canonical: string;
   try {
@@ -21,6 +21,8 @@ export async function verifyAttendeeWebhookSignature(input: VerifyWebhookSignatu
   const actual = bytesToBase64(digest);
   return timingSafeEqual(actual, input.signature);
 }
+
+export { verifyBotWebhookSignature as verifyAttendeeWebhookSignature };
 
 function timingSafeEqual(a: string, b: string): boolean {
   const left = new TextEncoder().encode(a);

@@ -1,5 +1,5 @@
 import { getSettings, saveSettings } from "@minutesbot/db";
-import { AppError, parseSettings, resolveAttendeeBaseUrl, type AppSettings } from "@minutesbot/shared";
+import { AppError, parseSettings, resolveBotBaseUrl, type AppSettings } from "@minutesbot/shared";
 import type { Env } from "../env";
 
 const botImageContentTypes = new Set(["image/png", "image/jpeg"]);
@@ -10,9 +10,9 @@ export async function readSettings(env: Env): Promise<AppSettings> {
     ...settings,
     attendee: {
       ...settings.attendee,
-      baseUrl: resolveAttendeeBaseUrl(settings.attendee.baseUrl, env.ATTENDEE_API_BASE_URL),
-      apiKeyConfigured: Boolean(env.ATTENDEE_API_KEY) || settings.attendee.apiKeyConfigured,
-      webhookSecretConfigured: Boolean(env.ATTENDEE_WEBHOOK_SECRET) || settings.attendee.webhookSecretConfigured
+      baseUrl: resolveBotBaseUrl(settings.attendee.baseUrl, env.BOT_API_BASE_URL),
+      apiKeyConfigured: Boolean(env.BOT_API_KEY) || settings.attendee.apiKeyConfigured,
+      webhookSecretConfigured: Boolean(env.BOT_WEBHOOK_SECRET) || settings.attendee.webhookSecretConfigured
     },
     ai: {
       ...settings.ai,
@@ -42,7 +42,7 @@ export async function uploadBotImage(
   }
 
   const extension = input.contentType === "image/png" ? "png" : "jpg";
-  const r2Key = `settings/attendee-bot-image.${extension}`;
+  const r2Key = `settings/meeting-bot-image.${extension}`;
   const bytes = base64ToBytes(input.data);
   await env.ARTIFACTS.put(r2Key, bytes, {
     httpMetadata: { contentType: input.contentType },

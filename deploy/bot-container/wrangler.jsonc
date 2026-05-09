@@ -1,0 +1,53 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "minutesbot-meeting-bot",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-04",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "meeting-bot.company.com",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "BOT_CONTAINER_SLEEP_AFTER": "24h",
+    "BOT_API_BASE_URL": "https://meeting-bot.company.com",
+    "BOT_RECORDING_BUCKET_NAME": "minutesbot-artifacts",
+    "TEAMS_RECORDER_EMAIL": "notetaker@company.com",
+    "BOT_WEBHOOK_BASE_URL": "https://admin.minutes.bot"
+  },
+  "r2_buckets": [
+    {
+      "binding": "ARTIFACTS",
+      "bucket_name": "minutesbot-artifacts"
+    }
+  ],
+  "containers": [
+    {
+      "class_name": "MeetingBotContainer",
+      "image": "../../apps/bot-runtime/Dockerfile",
+      "max_instances": 2,
+      "instance_type": "standard-2"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "MEETING_BOT",
+        "class_name": "MeetingBotContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["MeetingBotContainer"]
+    }
+  ]
+}

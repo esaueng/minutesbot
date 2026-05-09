@@ -1,11 +1,11 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { AttendeeClient, AttendeeClientError } from "@minutesbot/attendee-client";
+import { BotClient, BotClientError } from "@minutesbot/bot-client";
 import { parseIncomingInvite } from "@minutesbot/invite-parser";
 import { renderSummaryEmail } from "@minutesbot/email-renderer";
 import { createEmailProvider, formatEmailAddress } from "@minutesbot/email-sender";
 import { createOpenAiCompatibleProvider } from "@minutesbot/summary-engine";
-import { attendeeWebhookUrl, defaultSettings } from "@minutesbot/shared";
+import { botWebhookUrl, defaultSettings } from "@minutesbot/shared";
 import type { Env } from "../env";
 import { readSettings } from "../services/settingsService";
 
@@ -36,12 +36,12 @@ export const testActionsRoute = new Hono<{ Bindings: Env }>()
     return c.json({
       ok: true,
       environment: c.env.ENVIRONMENT,
-      attendee: {
+      botRuntime: {
         baseUrl: settings.attendee.baseUrl,
         apiKeyConfigured: settings.attendee.apiKeyConfigured,
         webhookSecretConfigured: settings.attendee.webhookSecretConfigured
       },
-      webhookUrl: attendeeWebhookUrl(c.env)
+      webhookUrl: botWebhookUrl(c.env)
     });
   })
   .post("/test-d1", async (c) => {
@@ -56,22 +56,22 @@ export const testActionsRoute = new Hono<{ Bindings: Env }>()
     await c.env.ARTIFACTS.delete(key);
     return c.json({ ok: true, message: "R2 put/read/delete succeeded" });
   })
-  .post("/test-attendee", async (c) => {
+  .post("/test-bot", async (c) => {
     const settings = await readSettings(c.env);
-    if (!c.env.ATTENDEE_API_KEY) return c.json({ ok: false, message: "ATTENDEE_API_KEY secret is not configured" }, 400);
-    const client = new AttendeeClient({ baseUrl: settings.attendee.baseUrl, apiKey: c.env.ATTENDEE_API_KEY });
+    if (!c.env.BOT_API_KEY) return c.json({ ok: false, message: "BOT_API_KEY secret is not configured" }, 400);
+    const client = new BotClient({ baseUrl: settings.attendee.baseUrl, apiKey: c.env.BOT_API_KEY });
     try {
       await client.checkHealth();
       await client.getBot("minutesbot-preflight");
     } catch (error) {
-      if (!(error instanceof AttendeeClientError && error.code === "ATTENDEE_NOT_FOUND")) {
-        return c.json({ ok: false, message: attendeeTestErrorMessage(error) }, 502);
+      if (!(error instanceof BotClientError && error.code === "BOT_NOT_FOUND")) {
+        return c.json({ ok: false, message: botTestErrorMessage(error) }, 502);
       }
     }
     return c.json({
       ok: true,
-      message: "Attendee API connection succeeded",
-      attendee: { baseUrl: settings.attendee.baseUrl }
+      message: "Meeting bot runtime connection succeeded",
+      botRuntime: { baseUrl: settings.attendee.baseUrl }
     });
   })
   .post("/test-ai", async (c) => {
@@ -173,10 +173,10 @@ export const testActionsRoute = new Hono<{ Bindings: Env }>()
     }
   })
   .post("/verify-webhook-signature-sample", async (c) =>
-    c.json({ ok: true, message: "Use ATTENDEE_WEBHOOK_SECRET and X-Webhook-Signature against /api/webhooks/attendee for live verification" })
+    c.json({ ok: true, message: "Use BOT_WEBHOOK_SECRET and X-Webhook-Signature against /api/webhooks/bot for live verification" })
   );
 
-function attendeeTestErrorMessage(error: unknown): string {
-  if (error instanceof AttendeeClientError) return `${error.code}: ${error.message}`;
-  return `ATTENDEE_REQUEST_FAILED: ${error instanceof Error ? error.message : String(error)}`;
+function botTestErrorMessage(error: unknown): string {
+  if (error instanceof BotClientError) return `${error.code}: ${error.message}`;
+  return `BOT_REQUEST_FAILED: ${error instanceof Error ? error.message : String(error)}`;
 }

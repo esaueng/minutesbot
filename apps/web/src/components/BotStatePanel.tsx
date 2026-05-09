@@ -1,9 +1,9 @@
 import { StatusBadge } from "./StatusBadge";
 
-export function AttendeeStatePanel({ meeting }: { meeting: Record<string, unknown> }) {
+export function BotStatePanel({ meeting }: { meeting: Record<string, unknown> }) {
   return (
     <section>
-      <h2>Attendee bot state</h2>
+      <h2>Meeting bot state</h2>
       <div className="metricGrid">
         <Metric label="Bot ID" value={String(meeting.attendee_bot_id ?? "Not created")} />
         <Metric label="State" value={<StatusBadge value={String(meeting.attendee_bot_state ?? "unknown")} />} />

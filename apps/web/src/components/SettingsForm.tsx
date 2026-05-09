@@ -51,23 +51,23 @@ export function SettingsForm({
       </SettingsSection>
 
       <SettingsSection
-        title="Attendee Integration"
-        description="Connects minutesbot to the external meeting-bot backend."
+        title="Meeting Bot Runtime"
+        description="Connects minutesbot to the first-party Teams recording runtime."
         status={<StatusPill tone={configuredTone(value.attendee.apiKeyConfigured)}>{configuredLabel(value.attendee.apiKeyConfigured)}</StatusPill>}
       >
         <TextField label="Base URL" value={value.attendee.baseUrl} width="url" onChange={(v) => update("attendee.baseUrl", v)} />
         <div className="secretRows">
-          <SecretStatusRow label="Attendee API key" configured={value.attendee.apiKeyConfigured} />
+          <SecretStatusRow label="Bot API key" configured={value.attendee.apiKeyConfigured} />
           <SecretStatusRow label="Webhook secret" configured={value.attendee.webhookSecretConfigured} />
         </div>
         <ToggleRow
           checked={value.attendee.deleteAttendeeDataAfterTranscriptFetch}
-          description="Remove Attendee-side data after minutesbot imports the transcript."
-          label="Delete Attendee data after transcript import"
+          description="Remove meeting bot runtime data after minutesbot imports the transcript."
+          label="Delete bot runtime data after transcript import"
           onChange={(v) => update("attendee.deleteAttendeeDataAfterTranscriptFetch", v)}
         />
         <div className="inlineActions">
-          <TestActionButton path="/api/admin/test-attendee" label="Test Attendee connection" variant="secondary" />
+          <TestActionButton path="/api/admin/test-bot" label="Test meeting bot connection" variant="secondary" />
         </div>
       </SettingsSection>
 

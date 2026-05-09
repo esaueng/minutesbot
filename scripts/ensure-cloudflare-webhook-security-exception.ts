@@ -3,12 +3,12 @@ import { fileURLToPath } from "node:url";
 const DEFAULT_ACCOUNT_ID = "";
 const DEFAULT_ZONE_NAME = "minutes.bot";
 const DEFAULT_WEBHOOK_HOST = "admin.minutes.bot";
-const DEFAULT_WEBHOOK_PATH = "/api/webhooks/attendee";
+const DEFAULT_WEBHOOK_PATH = "/api/webhooks/bot";
 const FIREWALL_CUSTOM_PHASE = "http_request_firewall_custom";
 
-export const ATTENDEE_WEBHOOK_SECURITY_EXCEPTION_REF = "minutesbot_attendee_webhook_security_exception";
-export const ATTENDEE_WEBHOOK_SECURITY_EXCEPTION_EXPRESSION =
-  'http.host eq "admin.minutes.bot" and http.request.uri.path eq "/api/webhooks/attendee" and http.request.method eq "POST"';
+export const BOT_WEBHOOK_SECURITY_EXCEPTION_REF = "minutesbot_bot_webhook_security_exception";
+export const BOT_WEBHOOK_SECURITY_EXCEPTION_EXPRESSION =
+  'http.host eq "admin.minutes.bot" and http.request.uri.path eq "/api/webhooks/bot" and http.request.method eq "POST"';
 
 type CloudflareFetch = typeof fetch;
 
@@ -69,8 +69,8 @@ export async function ensureWebhookSecurityException(options: EnsureWebhookSecur
       fetcher
     }));
   const expression = webhookSecurityExceptionExpression({
-    host: options.webhookHost ?? process.env.ATTENDEE_WEBHOOK_HOST ?? DEFAULT_WEBHOOK_HOST,
-    path: options.webhookPath ?? process.env.ATTENDEE_WEBHOOK_PATH ?? DEFAULT_WEBHOOK_PATH
+    host: options.webhookHost ?? process.env.BOT_WEBHOOK_HOST ?? DEFAULT_WEBHOOK_HOST,
+    path: options.webhookPath ?? process.env.BOT_WEBHOOK_PATH ?? DEFAULT_WEBHOOK_PATH
   });
 
   const existing = await getFirewallCustomEntrypoint({ apiToken, zoneId, fetcher });
@@ -97,10 +97,10 @@ export function webhookSecurityExceptionExpression(input: { host: string; path: 
   return `http.host eq "${input.host}" and http.request.uri.path eq "${input.path}" and http.request.method eq "POST"`;
 }
 
-export function upsertWebhookSecurityException(rules: RulesetRule[], expression = ATTENDEE_WEBHOOK_SECURITY_EXCEPTION_EXPRESSION): RulesetRule[] {
+export function upsertWebhookSecurityException(rules: RulesetRule[], expression = BOT_WEBHOOK_SECURITY_EXCEPTION_EXPRESSION): RulesetRule[] {
   const exceptionRule: RulesetRule = {
-    ref: ATTENDEE_WEBHOOK_SECURITY_EXCEPTION_REF,
-    description: "Skip Cloudflare browser and WAF challenges for signed Attendee webhook POSTs only.",
+    ref: BOT_WEBHOOK_SECURITY_EXCEPTION_REF,
+    description: "Skip Cloudflare browser and WAF challenges for signed meeting bot webhook POSTs only.",
     expression,
     action: "skip",
     action_parameters: {
@@ -110,8 +110,11 @@ export function upsertWebhookSecurityException(rules: RulesetRule[], expression 
     },
     enabled: true
   };
-  return [exceptionRule, ...rules.filter((rule) => rule.ref !== ATTENDEE_WEBHOOK_SECURITY_EXCEPTION_REF)];
+  return [exceptionRule, ...rules.filter((rule) => rule.ref !== BOT_WEBHOOK_SECURITY_EXCEPTION_REF)];
 }
+
+export const ATTENDEE_WEBHOOK_SECURITY_EXCEPTION_REF = BOT_WEBHOOK_SECURITY_EXCEPTION_REF;
+export const ATTENDEE_WEBHOOK_SECURITY_EXCEPTION_EXPRESSION = BOT_WEBHOOK_SECURITY_EXCEPTION_EXPRESSION;
 
 async function findZoneId(input: { apiToken: string; accountId: string; zoneName: string; fetcher: CloudflareFetch }): Promise<string> {
   const response = await cloudflareRequest<Zone[]>({

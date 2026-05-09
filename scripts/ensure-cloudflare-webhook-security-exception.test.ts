@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  ATTENDEE_WEBHOOK_SECURITY_EXCEPTION_REF,
+  BOT_WEBHOOK_SECURITY_EXCEPTION_REF,
   ensureWebhookSecurityException,
   upsertWebhookSecurityException,
   webhookSecurityExceptionExpression
 } from "./ensure-cloudflare-webhook-security-exception";
 
 describe("ensureWebhookSecurityException", () => {
-  it("builds the narrow Attendee webhook POST expression", () => {
-    expect(webhookSecurityExceptionExpression({ host: "admin.minutes.bot", path: "/api/webhooks/attendee" })).toBe(
-      'http.host eq "admin.minutes.bot" and http.request.uri.path eq "/api/webhooks/attendee" and http.request.method eq "POST"'
+  it("builds the narrow meeting bot webhook POST expression", () => {
+    expect(webhookSecurityExceptionExpression({ host: "admin.minutes.bot", path: "/api/webhooks/bot" })).toBe(
+      'http.host eq "admin.minutes.bot" and http.request.uri.path eq "/api/webhooks/bot" and http.request.method eq "POST"'
     );
   });
 
@@ -24,8 +24,8 @@ describe("ensureWebhookSecurityException", () => {
     ]);
 
     expect(rules[0]).toMatchObject({
-      ref: ATTENDEE_WEBHOOK_SECURITY_EXCEPTION_REF,
-      expression: 'http.host eq "admin.minutes.bot" and http.request.uri.path eq "/api/webhooks/attendee" and http.request.method eq "POST"',
+      ref: BOT_WEBHOOK_SECURITY_EXCEPTION_REF,
+      expression: 'http.host eq "admin.minutes.bot" and http.request.uri.path eq "/api/webhooks/bot" and http.request.method eq "POST"',
       action: "skip",
       action_parameters: {
         ruleset: "current",
@@ -75,6 +75,6 @@ describe("ensureWebhookSecurityException", () => {
     const update = requests.at(-1);
     expect(update?.url).toBe("https://api.cloudflare.com/client/v4/zones/zone_1/rulesets/phases/http_request_firewall_custom/entrypoint");
     expect(update?.init.method).toBe("PUT");
-    expect(JSON.parse(String(update?.init.body)).rules[0].ref).toBe(ATTENDEE_WEBHOOK_SECURITY_EXCEPTION_REF);
+    expect(JSON.parse(String(update?.init.body)).rules[0].ref).toBe(BOT_WEBHOOK_SECURITY_EXCEPTION_REF);
   });
 });

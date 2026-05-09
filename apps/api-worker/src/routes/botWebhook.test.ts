@@ -36,14 +36,14 @@ class WebhookD1 {
   }
 }
 
-describe("Attendee webhook route", () => {
+describe("meeting bot webhook route", () => {
   it("accepts signed post-processing webhooks and queues R2 transcript processing", async () => {
     const db = new WebhookD1();
     const summaryQueue = { send: vi.fn(async () => undefined) };
     const payload = postProcessingPayload("wh_1");
 
     const response = await app.request(
-      "/api/webhooks/attendee",
+      "/api/webhooks/bot",
       {
         method: "POST",
         headers: {
@@ -61,13 +61,13 @@ describe("Attendee webhook route", () => {
     expect(db.meetingUpdates).toHaveLength(1);
   });
 
-  it("accepts the signed Attendee webhook path with a trailing slash", async () => {
+  it("accepts the signed meeting bot webhook path with a trailing slash", async () => {
     const db = new WebhookD1();
     const summaryQueue = { send: vi.fn(async () => undefined) };
     const payload = postProcessingPayload("wh_2");
 
     const response = await app.request(
-      "/api/webhooks/attendee/",
+      "/api/webhooks/bot/",
       {
         method: "POST",
         headers: {
@@ -98,7 +98,7 @@ describe("Attendee webhook route", () => {
     };
 
     const response = await app.request(
-      "/api/webhooks/attendee",
+      "/api/webhooks/bot",
       {
         method: "POST",
         headers: {
@@ -121,7 +121,7 @@ describe("Attendee webhook route", () => {
     const rawBody = "{bad-json";
 
     const response = await app.request(
-      "/api/webhooks/attendee",
+      "/api/webhooks/bot",
       {
         method: "POST",
         headers: {
@@ -174,7 +174,7 @@ function env(db: WebhookD1, summaryQueue: { send: ReturnType<typeof vi.fn> }) {
     INVITE_QUEUE: { send: vi.fn() },
     SUMMARY_QUEUE: summaryQueue,
     EMAIL_QUEUE: { send: vi.fn() },
-    ATTENDEE_WEBHOOK_SECRET: webhookSecret(),
+    BOT_WEBHOOK_SECRET: webhookSecret(),
     SESSION_SECRET: "test-secret"
   };
 }

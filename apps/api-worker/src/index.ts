@@ -3,7 +3,7 @@ import { toErrorResponse } from "@minutesbot/shared";
 import type { Env } from "./env";
 import { auditLogsRoute } from "./routes/auditLogs";
 import { artifactsRoute } from "./routes/artifacts";
-import { attendeeWebhookRoute } from "./routes/attendeeWebhook";
+import { botWebhookRoute } from "./routes/botWebhook";
 import { healthRoute } from "./routes/health";
 import { meetingsRoute } from "./routes/meetings";
 import { settingsRoute } from "./routes/settings";
@@ -38,8 +38,10 @@ app.route("/api/admin", testActionsRoute);
 app.route("/api/admin/audit-logs", auditLogsRoute);
 app.route("/api/meetings", meetingsRoute);
 app.route("/api/artifacts", artifactsRoute);
-app.route("/api/webhooks/attendee", attendeeWebhookRoute);
-app.route("/api/webhooks/attendee/", attendeeWebhookRoute);
+app.route("/api/webhooks/bot", botWebhookRoute);
+app.route("/api/webhooks/bot/", botWebhookRoute);
+app.route("/api/webhooks/attendee", botWebhookRoute);
+app.route("/api/webhooks/attendee/", botWebhookRoute);
 
 export default {
   async fetch(request, env, ctx) {

@@ -40,6 +40,10 @@ export const meetingsRoute = new Hono<{ Bindings: Env }>()
     await c.env.SUMMARY_QUEUE.send({ type: "fetch_transcript", meetingId: c.req.param("id") });
     return c.json({ ok: true });
   })
+  .post("/:id/delete-bot-data", async (c) => {
+    await c.env.SUMMARY_QUEUE.send({ type: "delete_attendee_data", meetingId: c.req.param("id") });
+    return c.json({ ok: true });
+  })
   .post("/:id/delete-attendee-data", async (c) => {
     await c.env.SUMMARY_QUEUE.send({ type: "delete_attendee_data", meetingId: c.req.param("id") });
     return c.json({ ok: true });

@@ -1,4 +1,4 @@
-export class AttendeeClientError extends Error {
+export class BotClientError extends Error {
   constructor(
     message: string,
     public readonly status: number,
@@ -8,6 +8,8 @@ export class AttendeeClientError extends Error {
     super(message);
   }
 }
+
+export { BotClientError as AttendeeClientError };
 
 export function retryableStatus(status: number): boolean {
   return status === 429 || status >= 500;

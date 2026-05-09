@@ -1,6 +1,6 @@
-import { ATTENDEE_WEBHOOK_TRIGGERS, AttendeeClient, AttendeeClientError, type AttendeeBot } from "@minutesbot/attendee-client";
+import { BOT_WEBHOOK_TRIGGERS, BotClient, BotClientError, type BotRun } from "@minutesbot/bot-client";
 import { createAuditLog, getMeeting, getSettings, updateMeetingBotState, updateMeetingStatus } from "@minutesbot/db";
-import { AppError, attendeeWebhookUrl, minutesBefore, recordingR2Key, resolveAttendeeBaseUrl } from "@minutesbot/shared";
+import { AppError, botWebhookUrl, minutesBefore, recordingR2Key, resolveBotBaseUrl } from "@minutesbot/shared";
 import type { WorkflowEnv } from "./env";
 
 const MAX_QUEUE_DELAY_SECONDS = 12 * 60 * 60;
@@ -31,13 +31,13 @@ export async function createMeetingBot(env: WorkflowEnv, meetingId: string): Pro
   await updateMeetingStatus(env.DB, meetingId, "BOT_CREATE_QUEUED");
   await createAuditLog(env.DB, { eventType: "bot.create_queued", resourceType: "meeting", resourceId: meetingId });
 
-  let bot: AttendeeBot;
+  let bot: BotRun;
   try {
-    if (!env.ATTENDEE_API_KEY) throw new AppError("ATTENDEE_API_KEY_MISSING", "ATTENDEE_API_KEY secret is not configured", 500);
-    if (!env.ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME) {
-      throw new AppError("ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME_MISSING", "ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME is not configured", 500);
+    if (!env.BOT_API_KEY) throw new AppError("BOT_API_KEY_MISSING", "BOT_API_KEY secret is not configured", 500);
+    if (!env.BOT_RECORDING_BUCKET_NAME) {
+      throw new AppError("BOT_RECORDING_BUCKET_NAME_MISSING", "BOT_RECORDING_BUCKET_NAME is not configured", 500);
     }
-    const client = new AttendeeClient({ baseUrl: resolveAttendeeBaseUrl(settings.attendee.baseUrl, env.ATTENDEE_API_BASE_URL), apiKey: env.ATTENDEE_API_KEY });
+    const client = new BotClient({ baseUrl: resolveBotBaseUrl(settings.attendee.baseUrl, env.BOT_API_BASE_URL), apiKey: env.BOT_API_KEY });
     await client.checkHealth();
     bot = await client.createBot({
       meetingUrl: meeting.teams_join_url ?? "",
@@ -46,13 +46,13 @@ export async function createMeetingBot(env: WorkflowEnv, meetingId: string): Pro
       botChatMessage: botJoinChatMessage(settings.attendee.botName),
       recordingSettings: { format: "mp3" },
       externalMediaStorageSettings: {
-        bucketName: env.ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME,
+        bucketName: env.BOT_RECORDING_BUCKET_NAME,
         recordingFileName: recordingR2Key(meeting.id)
       },
       webhooks: [
         {
-          url: attendeeWebhookUrl(env),
-          triggers: [...ATTENDEE_WEBHOOK_TRIGGERS]
+          url: botWebhookUrl(env),
+          triggers: [...BOT_WEBHOOK_TRIGGERS]
         }
       ],
       metadata: { minutesbot_meeting_id: meeting.id, calendar_uid: meeting.calendar_uid }
@@ -107,7 +107,7 @@ function secondsUntil(iso: string): number {
 }
 
 function botCreationFailure(error: unknown): { latestError: string; auditMetadata: Record<string, unknown> } {
-  if (error instanceof AttendeeClientError) {
+  if (error instanceof BotClientError) {
     return {
       latestError: `${error.code}: ${error.message}`,
       auditMetadata: { code: error.code, status: error.status, retryable: error.retryable }
@@ -121,7 +121,7 @@ function botCreationFailure(error: unknown): { latestError: string; auditMetadat
   }
   const message = error instanceof Error ? error.message : String(error);
   return {
-    latestError: `ATTENDEE_CREATE_FAILED: ${message}`,
-    auditMetadata: { code: "ATTENDEE_CREATE_FAILED", message }
+    latestError: `BOT_CREATE_FAILED: ${message}`,
+    auditMetadata: { code: "BOT_CREATE_FAILED", message }
   };
 }

@@ -60,11 +60,11 @@ function env(overrides: Partial<WorkflowEnv> = {}, db = new BotCreationD1()): Wo
     INVITE_QUEUE: { send: vi.fn() },
     SUMMARY_QUEUE: { send: vi.fn() },
     EMAIL_QUEUE: { send: vi.fn() },
-    ATTENDEE_API_BASE_URL: "https://attendee.example.com",
-    ATTENDEE_API_KEY: "attendee-secret",
-    ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME: "minutesbot-artifacts",
+    BOT_API_BASE_URL: "https://meeting-bot.example.com",
+    BOT_API_KEY: "bot-secret",
+    BOT_RECORDING_BUCKET_NAME: "minutesbot-artifacts",
     API_BASE_URL: "https://minutesbot.example.com",
-    ATTENDEE_WEBHOOK_BASE_URL: "https://minutesbot-webhook.wgsglobal.app",
+    BOT_WEBHOOK_BASE_URL: "https://minutesbot-webhook.wgsglobal.app",
     ...overrides
   };
 }
@@ -74,7 +74,7 @@ describe("createMeetingBot failure handling", () => {
     vi.unstubAllGlobals();
   });
 
-  it("adds the uploaded bot image and configured Teams display name to Attendee bot creation", async () => {
+  it("adds the uploaded bot image and configured Teams display name to meeting bot creation", async () => {
     const db = new BotCreationD1();
     db.settings = {
       ...defaultSettings,
@@ -111,7 +111,7 @@ describe("createMeetingBot failure handling", () => {
     });
   });
 
-  it("creates Attendee bots with MP3 recording upload to R2", async () => {
+  it("creates meeting bots with MP3 recording upload to R2", async () => {
     const db = new BotCreationD1();
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     vi.stubGlobal(
@@ -141,27 +141,27 @@ describe("createMeetingBot failure handling", () => {
       },
       webhooks: [
         {
-          url: "https://minutesbot-webhook.wgsglobal.app/api/webhooks/attendee"
+          url: "https://minutesbot-webhook.wgsglobal.app/api/webhooks/bot"
         }
       ]
     });
   });
 
-  it("stores a visible failure when ATTENDEE_API_KEY is missing", async () => {
+  it("stores a visible failure when BOT_API_KEY is missing", async () => {
     const db = new BotCreationD1();
 
-    await expect(createMeetingBot(env({ ATTENDEE_API_KEY: undefined }, db), "mtg_1")).rejects.toMatchObject({
-      code: "ATTENDEE_API_KEY_MISSING"
+    await expect(createMeetingBot(env({ BOT_API_KEY: undefined }, db), "mtg_1")).rejects.toMatchObject({
+      code: "BOT_API_KEY_MISSING"
     });
 
     expect(db.statusUpdates.at(-1)).toEqual({
       status: "FAILED",
-      latestError: "ATTENDEE_API_KEY_MISSING: ATTENDEE_API_KEY secret is not configured"
+      latestError: "BOT_API_KEY_MISSING: BOT_API_KEY secret is not configured"
     });
     expect(db.auditLogs.at(-1)).toMatchObject({ eventType: "bot.fatal_error" });
   });
 
-  it("stores a visible failure when Attendee cannot be reached", async () => {
+  it("stores a visible failure when the meeting bot runtime cannot be reached", async () => {
     const db = new BotCreationD1();
     vi.stubGlobal(
       "fetch",
@@ -174,12 +174,12 @@ describe("createMeetingBot failure handling", () => {
 
     expect(db.statusUpdates.at(-1)).toEqual({
       status: "FAILED",
-      latestError: "ATTENDEE_CREATE_FAILED: fetch failed"
+      latestError: "BOT_CREATE_FAILED: fetch failed"
     });
     expect(db.auditLogs.at(-1)).toMatchObject({ eventType: "bot.fatal_error" });
   });
 
-  it("stores a visible failure when Attendee rejects bot creation", async () => {
+  it("stores a visible failure when the meeting bot runtime rejects bot creation", async () => {
     const db = new BotCreationD1();
     vi.stubGlobal(
       "fetch",
@@ -189,22 +189,22 @@ describe("createMeetingBot failure handling", () => {
         .mockResolvedValueOnce(new Response("bad auth", { status: 401 }))
     );
 
-    await expect(createMeetingBot(env({}, db), "mtg_1")).rejects.toMatchObject({ code: "ATTENDEE_AUTH_FAILED" });
+    await expect(createMeetingBot(env({}, db), "mtg_1")).rejects.toMatchObject({ code: "BOT_AUTH_FAILED" });
 
     expect(db.statusUpdates.at(-1)).toEqual({
       status: "FAILED",
-      latestError: "ATTENDEE_AUTH_FAILED: Attendee request failed with 401"
+      latestError: "BOT_AUTH_FAILED: Meeting bot request failed with 401"
     });
     expect(db.auditLogs.at(-1)).toMatchObject({ eventType: "bot.fatal_error" });
   });
 
-  it("stores a visible failure when Attendee health reports missing runtime settings", async () => {
+  it("stores a visible failure when meeting bot health reports missing runtime settings", async () => {
     const db = new BotCreationD1();
     db.settings = {
       ...defaultSettings,
       attendee: {
         ...defaultSettings.attendee,
-        baseUrl: "https://attendee.wgsglobal.app"
+        baseUrl: "https://meeting-bot.wgsglobal.app"
       }
     };
     const requests: string[] = [];
@@ -212,25 +212,25 @@ describe("createMeetingBot failure handling", () => {
       "fetch",
       vi.fn(async (url: string | URL | Request) => {
         requests.push(String(url));
-        return new Response(JSON.stringify({ ok: false, runtime: "cloudflare-containers", missing: ["DATABASE_URL", "REDIS_URL"] }), {
+        return new Response(JSON.stringify({ ok: false, runtime: "meeting-bot-container", missing: ["TEAMS_RECORDER_PASSWORD", "ffmpeg"] }), {
           status: 503,
           headers: { "content-type": "application/json" }
         });
       })
     );
 
-    await expect(createMeetingBot(env({ ATTENDEE_API_BASE_URL: "https://attendee.wgsglobal.app" }, db), "mtg_1")).rejects.toMatchObject({
-      code: "ATTENDEE_UNHEALTHY"
+    await expect(createMeetingBot(env({ BOT_API_BASE_URL: "https://meeting-bot.wgsglobal.app" }, db), "mtg_1")).rejects.toMatchObject({
+      code: "BOT_UNHEALTHY"
     });
 
-    expect(requests).toEqual(["https://attendee.wgsglobal.app/_ops/health"]);
+    expect(requests).toEqual(["https://meeting-bot.wgsglobal.app/_ops/health"]);
     expect(db.statusUpdates.at(-1)).toEqual({
       status: "FAILED",
-      latestError: "ATTENDEE_UNHEALTHY: Attendee health check failed: missing DATABASE_URL, REDIS_URL"
+      latestError: "BOT_UNHEALTHY: Meeting bot health check failed: missing TEAMS_RECORDER_PASSWORD, ffmpeg"
     });
     expect(db.auditLogs.at(-1)).toMatchObject({
       eventType: "bot.fatal_error",
-      metadata: { code: "ATTENDEE_UNHEALTHY" }
+      metadata: { code: "BOT_UNHEALTHY" }
     });
   });
 });

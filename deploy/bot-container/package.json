@@ -1,5 +1,5 @@
 {
-  "name": "@minutesbot/attendee-container",
+  "name": "@minutesbot/bot-container",
   "private": true,
   "type": "module",
   "scripts": {

@@ -38,6 +38,8 @@ export function isPublicApiPath(path: string): boolean {
   return (
     path === "/api/health" ||
     path === "/api/health/" ||
+    path === "/api/webhooks/bot" ||
+    path === "/api/webhooks/bot/" ||
     path === "/api/webhooks/attendee" ||
     path === "/api/webhooks/attendee/" ||
     /^\/api\/artifacts\/[^/]+\/transcript\.txt\/?$/.test(path)
