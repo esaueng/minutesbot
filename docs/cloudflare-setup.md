@@ -2,22 +2,29 @@
 
 Run `pnpm setup:cloudflare` for guided commands. The script prints commands and intentionally does not accept secrets as command-line arguments.
 
-Use `pnpm run deploy` for deployments. In Cloudflare build settings, set the deploy command to `pnpm run deploy`, not `npx wrangler deploy`, because the package script first runs the idempotent Cloudflare queue check required by this project.
+Use `pnpm deploy:oneshot --env production` for first-time Cloudflare-first deployments that include the Attendee Container router. Use `pnpm run deploy` for later minutesbot-only deployments. In Cloudflare build settings, set the deploy command to `pnpm run deploy`, not `npx wrangler deploy`, because the package script first runs the idempotent Cloudflare queue check required by this project.
 
 Workers Builds defaults to `npx wrangler deploy` if the deploy command is not customized. The root `pnpm run build` command also checks for `WORKERS_CI=1` and creates or verifies the required D1 database, R2 bucket, queues, and D1 migrations before the workspace build. It rewrites the build container's `wrangler.jsonc` with the actual D1 `database_id`, so the default deploy command still has valid bindings available. Set `MINUTESBOT_DEPLOY_ENV=staging` in Workers Builds only when intentionally deploying the staging environment; otherwise production resource names are used.
 
 This repo is Cloudflare-first for the minutesbot control plane. The Worker serves the API and the Vite admin UI through Workers Static Assets; D1, R2, Queues, Workflows, and Email Routing are the production runtime.
 
-## DNS Cutover
+## One-Shot Deploy
 
-The `wgs.bot` zone is hosted in Cloudflare. Public traffic will keep going to the previous provider until the domain registrar nameservers are changed to:
+Create `.env.oneshot` from the example, fill in account/domain/provider values, and run:
 
-```text
-abby.ns.cloudflare.com
-arvind.ns.cloudflare.com
+```bash
+cp .env.oneshot.example .env.oneshot
+pnpm install
+pnpm deploy:oneshot --env production
 ```
 
-If `pnpm check` returns a Vercel `DEPLOYMENT_NOT_FOUND` response, the registrar is still pointing at Vercel nameservers and Cloudflare Workers cannot serve the app yet. The production Worker is served on `https://minutesbot-admin.wgsglobal.app`, `https://minutesbot-api.wgsglobal.app`, and `https://minutesbot-webhook.wgsglobal.app`.
+The script validates pnpm, Wrangler auth, Docker, `.env.oneshot`, external Postgres/Redis URLs, R2 S3 credentials, Attendee secrets, AI/transcription keys, and session/email settings. It then generates ignored Wrangler configs under `.wrangler/`, ensures D1/R2/queues/migrations, prepares upstream Attendee in `.attendee/upstream`, deploys Attendee on Cloudflare Containers, pushes secrets, deploys minutesbot, and runs health/smoke checks.
+
+Run `pnpm deploy:oneshot --env production --dry-run` to validate the plan without mutating Cloudflare resources.
+
+## DNS Cutover
+
+Public traffic will not reach Workers until the relevant domain is active in Cloudflare DNS and the configured custom domains exist. Configure custom domains such as `notes.company.com`, `api.company.com`, `webhook.company.com`, and `attendee.company.com` before running the real deployment.
 
 ## Resources
 
@@ -25,13 +32,13 @@ If `pnpm check` returns a Vercel `DEPLOYMENT_NOT_FOUND` response, the registrar 
 - R2 bucket binding: `ARTIFACTS`
 - Attendee external media bucket var: `ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME`
 - Queues: `INVITE_QUEUE`, `SUMMARY_QUEUE`, `EMAIL_QUEUE`
-- Workflow binding: `MEETING_WORKFLOW`
+- Workflow bindings: `MEETING_WORKFLOW`, `TRANSCRIPT_WORKFLOW`, `SUMMARY_WORKFLOW`, `CLEANUP_WORKFLOW`
 - Optional email binding: `SEND_EMAIL`
 - Optional Attendee Container deployment: `deploy/attendee-container`
 
 ## Environments
 
-The root `wrangler.jsonc` includes `staging` and `production` environments. Production points web UI traffic at `https://minutesbot-admin.wgsglobal.app`, API traffic at `https://minutesbot-api.wgsglobal.app`, Attendee webhook delivery at `https://minutesbot-webhook.wgsglobal.app`, and Attendee hosted services at `https://app.attendee.dev`. Staging uses separate route/resource names and must have its placeholder D1 database id replaced before use.
+The checked-in `wrangler.jsonc` uses generic `company.com` placeholders. The one-shot deploy script writes concrete ignored configs from `.env.oneshot` so account IDs, route hosts, sender addresses, and bucket names do not need to be committed.
 
 ## Commands
 
@@ -46,13 +53,6 @@ wrangler secret put AI_API_KEY
 wrangler secret put SESSION_SECRET
 pnpm db:migrate:remote
 pnpm run deploy
-```
-
-Use environment-specific commands when deploying staging:
-
-```bash
-wrangler d1 migrations apply minutesbot-staging --remote --env staging
-pnpm deploy:staging
 ```
 
 Configure Email Routing to send `notetaker@meet.company.com` to the Email Worker. Any notetaker aliases configured in Setup must also route to the same Email Worker. Configure custom domains such as `notes.company.com`, `api.company.com`, and `attendee.company.com` in Cloudflare DNS/routes.
@@ -73,7 +73,7 @@ minutesbot supplies `recording_settings.format = mp3` and `external_media_storag
 
 ## Attendee Boundary
 
-By default, minutesbot calls Attendee hosted services at `https://app.attendee.dev`. If self-hosting Attendee instead, use `deploy/attendee-container` to run upstream Attendee on Cloudflare Containers, backed by external Postgres and Redis-compatible services. Then set `ATTENDEE_API_BASE_URL` to the Attendee Container domain and configure the webhook URL in Attendee:
+For one-shot Cloudflare-first deployments, use `deploy/attendee-container` to run upstream Attendee on Cloudflare Containers, backed by external Postgres and Redis-compatible services. Set `ATTENDEE_API_BASE_URL` to the Attendee Container domain and configure the webhook URL in Attendee:
 
 ```text
 https://<api-domain>/api/webhooks/attendee

@@ -8,8 +8,8 @@ import {
 
 describe("ensureWebhookSecurityException", () => {
   it("builds the narrow Attendee webhook POST expression", () => {
-    expect(webhookSecurityExceptionExpression({ host: "minutesbot-webhook.wgsglobal.app", path: "/api/webhooks/attendee" })).toBe(
-      'http.host eq "minutesbot-webhook.wgsglobal.app" and http.request.uri.path eq "/api/webhooks/attendee" and http.request.method eq "POST"'
+    expect(webhookSecurityExceptionExpression({ host: "webhook.company.com", path: "/api/webhooks/attendee" })).toBe(
+      'http.host eq "webhook.company.com" and http.request.uri.path eq "/api/webhooks/attendee" and http.request.method eq "POST"'
     );
   });
 
@@ -25,7 +25,7 @@ describe("ensureWebhookSecurityException", () => {
 
     expect(rules[0]).toMatchObject({
       ref: ATTENDEE_WEBHOOK_SECURITY_EXCEPTION_REF,
-      expression: 'http.host eq "minutesbot-webhook.wgsglobal.app" and http.request.uri.path eq "/api/webhooks/attendee" and http.request.method eq "POST"',
+      expression: 'http.host eq "webhook.company.com" and http.request.uri.path eq "/api/webhooks/attendee" and http.request.method eq "POST"',
       action: "skip",
       action_parameters: {
         ruleset: "current",
@@ -42,7 +42,7 @@ describe("ensureWebhookSecurityException", () => {
     const fetcher = async (url: string | URL | Request, init?: RequestInit) => {
       requests.push({ url: String(url), init: init ?? {} });
       if (String(url).includes("/zones?")) {
-        return Response.json({ success: true, result: [{ id: "zone_1", name: "wgsglobal.app" }] });
+        return Response.json({ success: true, result: [{ id: "zone_1", name: "company.com" }] });
       }
       if (init?.method === "GET") {
         return Response.json({
@@ -67,7 +67,7 @@ describe("ensureWebhookSecurityException", () => {
     await ensureWebhookSecurityException({
       apiToken: "token",
       accountId: "account_1",
-      zoneName: "wgsglobal.app",
+      zoneName: "company.com",
       fetcher: fetcher as typeof fetch,
       log: () => undefined
     });

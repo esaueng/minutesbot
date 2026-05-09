@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const legacySelfHostedAttendeeBaseUrls = new Set(["https://attendee.wgsglobal.app", "https://attendee.wgs.bot"]);
+const legacySelfHostedAttendeeBaseUrls = new Set<string>();
 const defaultTimeZone = "UTC";
 
 const domainSchema = z
@@ -58,7 +58,7 @@ const defaultRecapConfig = {
   transcriptDownloadExpirationHours: 24
 };
 
-export const defaultSampleRecapRecipient = "it@wgsglobalservices.com";
+export const defaultSampleRecapRecipient = "admin@company.com";
 
 export const defaultRecapPrompt = [
   "You generate WGS meeting recaps from Microsoft Teams meeting titles and transcripts. Return strict JSON only.",
@@ -176,10 +176,10 @@ export type AppSettings = z.infer<typeof appSettingsSchema>;
 
 export const defaultSettings: AppSettings = {
   companyName: "Minutesbot Demo",
-  primaryDomain: "wgs.bot",
+  primaryDomain: "company.com",
   timeZone: defaultTimeZone,
-  allowedDomains: ["wgs.bot"],
-  recorderEmail: "notetaker@wgs.bot",
+  allowedDomains: ["company.com"],
+  recorderEmail: "notetaker@meet.company.com",
   recorderAliasEmails: [],
   attendee: {
     baseUrl: "https://app.attendee.dev",
@@ -198,7 +198,7 @@ export const defaultSettings: AppSettings = {
   },
   email: {
     provider: "mock",
-    senderEmail: "notetaker@wgs.bot",
+    senderEmail: "notetaker@meet.company.com",
     testRecipient: defaultSampleRecapRecipient
   },
   policy: {

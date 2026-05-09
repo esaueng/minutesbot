@@ -113,7 +113,7 @@ export function SettingsForm({
           />
           <ToggleRow
             checked={value.policy.allowSubdomains}
-            description="Allow addresses like user@team.wgs.bot."
+            description="Allow addresses like user@team.company.com."
             label="Allow subdomains"
             onChange={(v) => update("policy.allowSubdomains", v)}
           />

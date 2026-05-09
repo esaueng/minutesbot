@@ -16,6 +16,7 @@
     "deploy": "pnpm deploy:production",
     "deploy:staging": "tsx scripts/deploy-minutesbot.ts --env staging",
     "deploy:production": "tsx scripts/deploy-minutesbot.ts --env production",
+    "deploy:oneshot": "tsx scripts/deploy-oneshot.ts",
     "attendee:prepare": "tsx scripts/prepare-attendee-container.ts",
     "attendee:deploy": "tsx scripts/deploy-attendee.ts",
     "db:migrate:local": "wrangler d1 migrations apply minutesbot --local",

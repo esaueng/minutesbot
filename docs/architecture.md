@@ -20,7 +20,7 @@ flowchart LR
   Summary --> EmailOut["Email provider"]
 ```
 
-minutesbot is the Cloudflare control plane. Attendee is the meeting-bot backend and remains independently deployed.
+minutesbot is the Cloudflare control plane. Attendee is the meeting-bot backend and runs as upstream Attendee, either hosted separately or deployed beside minutesbot through the Cloudflare Container scaffold with external Postgres and Redis.
 
 ## Data Flow
 

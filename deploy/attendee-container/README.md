@@ -29,6 +29,13 @@ wrangler secret put CREDENTIALS_ENCRYPTION_KEY --config deploy/attendee-containe
 pnpm attendee:deploy
 ```
 
+For the full control-plane plus Attendee Container deployment, prefer the top-level one-shot command:
+
+```bash
+cp .env.oneshot.example .env.oneshot
+pnpm deploy:oneshot --env production
+```
+
 Set additional Attendee/provider secrets as needed:
 
 ```bash
@@ -45,14 +52,14 @@ Use R2 S3 API credentials for the AWS/S3 settings if you want Attendee object st
 
 ## Operations
 
-- Health/config check: `https://attendee.wgsglobal.app/_ops/health`
-- Start or restart background containers: `POST https://attendee.wgsglobal.app/_ops/start-workers`
+- Health/config check: `https://attendee.company.com/_ops/health`
+- Start or restart background containers: `POST https://attendee.company.com/_ops/start-workers`
 - The cron trigger calls the same background start path every 30 minutes as a best-effort keepalive.
 
 After Attendee is reachable, set the minutesbot Worker secret/config to point at this domain:
 
 ```bash
-ATTENDEE_API_BASE_URL=https://attendee.wgsglobal.app
+ATTENDEE_API_BASE_URL=https://attendee.company.com
 wrangler secret put ATTENDEE_API_KEY
 wrangler secret put ATTENDEE_WEBHOOK_SECRET
 ```
@@ -60,7 +67,7 @@ wrangler secret put ATTENDEE_WEBHOOK_SECRET
 The minutesbot webhook URL for Attendee is:
 
 ```text
-https://minutesbot-webhook.wgsglobal.app/api/webhooks/attendee
+https://webhook.company.com/api/webhooks/attendee
 ```
 
 ## Feasibility Boundary

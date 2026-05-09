@@ -62,7 +62,7 @@ describe("settings validation", () => {
 
   it("uses the WGS IT mailbox as the default sample recap recipient", () => {
     expect(defaultSettings.email.testRecipient).toBe(defaultSampleRecapRecipient);
-    expect(parseSettings(defaultSettings).email.testRecipient).toBe("it@wgsglobalservices.com");
+    expect(parseSettings(defaultSettings).email.testRecipient).toBe("admin@company.com");
   });
 
   it("keeps bot image storage metadata without storing image bytes in settings", () => {

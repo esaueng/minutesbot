@@ -24,12 +24,19 @@ export type CloudflareEnvironment = keyof typeof REQUIRED_RESOURCES;
 
 export type RunCommand = (command: string, args: string[]) => Promise<string | void>;
 
+export type RequiredCloudflareResources = {
+  d1: { binding: string; databaseName: string };
+  r2Buckets: string[];
+  queues: string[];
+};
+
 export type EnsureCloudflareResourcesOptions = {
   environment?: CloudflareEnvironment;
   configPath?: string;
   runCommand?: RunCommand;
   readConfig?: (path: string) => Promise<string>;
   writeConfig?: (path: string, contents: string) => Promise<void>;
+  resources?: RequiredCloudflareResources;
   log?: (message: string) => void;
   error?: (message: string) => void;
 };
@@ -96,7 +103,7 @@ export async function ensureCloudflareResources(options: EnsureCloudflareResourc
   const log = options.log ?? console.log;
   const error = options.error ?? console.error;
   const environment = options.environment ?? "production";
-  const resources = REQUIRED_RESOURCES[environment];
+  const resources = options.resources ?? REQUIRED_RESOURCES[environment];
 
   await ensureD1Database({
     binding: resources.d1.binding,
@@ -111,12 +118,12 @@ export async function ensureCloudflareResources(options: EnsureCloudflareResourc
   });
 
   for (const bucketName of resources.r2Buckets) {
-    await ensureR2Bucket({ bucketName, runCommand, log, error });
+    await ensureR2Bucket({ bucketName, configPath, runCommand, log, error });
   }
 
   for (const queueName of resources.queues) {
     try {
-      await runCommand("wrangler", ["queues", "info", queueName]);
+      await runCommand("wrangler", withConfig(["queues", "info", queueName], configPath));
       log(`Cloudflare Queue ${queueName} already exists.`);
       continue;
     } catch (infoError) {
@@ -128,7 +135,7 @@ export async function ensureCloudflareResources(options: EnsureCloudflareResourc
 
     try {
       log(`Creating Cloudflare Queue ${queueName}...`);
-      await runCommand("wrangler", ["queues", "create", queueName]);
+      await runCommand("wrangler", withConfig(["queues", "create", queueName], configPath));
       log(`Cloudflare Queue ${queueName} created.`);
     } catch (createError) {
       error(`Failed to create Cloudflare Queue ${queueName}: ${errorMessage(createError)}`);
@@ -148,12 +155,12 @@ async function ensureD1Database(options: {
   log: (message: string) => void;
   error: (message: string) => void;
 }): Promise<void> {
-  let databaseId = await findD1DatabaseId(options.runCommand, options.databaseName);
+  let databaseId = await findD1DatabaseId(options.runCommand, options.databaseName, options.configPath);
 
   if (!databaseId) {
     options.log(`Creating Cloudflare D1 database ${options.databaseName}...`);
-    await options.runCommand("wrangler", ["d1", "create", options.databaseName]);
-    databaseId = await findD1DatabaseId(options.runCommand, options.databaseName);
+    await options.runCommand("wrangler", withConfig(["d1", "create", options.databaseName], options.configPath));
+    databaseId = await findD1DatabaseId(options.runCommand, options.databaseName, options.configPath);
   }
 
   if (!databaseId) {
@@ -172,17 +179,18 @@ async function ensureD1Database(options: {
 
   const migrationArgs = ["d1", "migrations", "apply", options.databaseName, "--remote"];
   if (options.environment === "staging") migrationArgs.push("--env", "staging");
-  await options.runCommand("wrangler", migrationArgs);
+  await options.runCommand("wrangler", withConfig(migrationArgs, options.configPath));
 }
 
 async function ensureR2Bucket(options: {
   bucketName: string;
+  configPath: string;
   runCommand: RunCommand;
   log: (message: string) => void;
   error: (message: string) => void;
 }): Promise<void> {
   try {
-    await options.runCommand("wrangler", ["r2", "bucket", "info", options.bucketName]);
+    await options.runCommand("wrangler", withConfig(["r2", "bucket", "info", options.bucketName], options.configPath));
     options.log(`Cloudflare R2 bucket ${options.bucketName} already exists.`);
     return;
   } catch (infoError) {
@@ -194,7 +202,7 @@ async function ensureR2Bucket(options: {
 
   try {
     options.log(`Creating Cloudflare R2 bucket ${options.bucketName}...`);
-    await options.runCommand("wrangler", ["r2", "bucket", "create", options.bucketName]);
+    await options.runCommand("wrangler", withConfig(["r2", "bucket", "create", options.bucketName], options.configPath));
     options.log(`Cloudflare R2 bucket ${options.bucketName} created.`);
   } catch (createError) {
     options.error(`Failed to create Cloudflare R2 bucket ${options.bucketName}: ${errorMessage(createError)}`);
@@ -202,12 +210,16 @@ async function ensureR2Bucket(options: {
   }
 }
 
-async function findD1DatabaseId(runCommand: RunCommand, databaseName: string): Promise<string | undefined> {
-  const output = await runCommand("wrangler", ["d1", "list", "--json"]);
+async function findD1DatabaseId(runCommand: RunCommand, databaseName: string, configPath: string): Promise<string | undefined> {
+  const output = await runCommand("wrangler", withConfig(["d1", "list", "--json"], configPath));
   if (typeof output !== "string" || output.length === 0) return undefined;
   const databases = parseD1ListOutput(output);
   const database = databases.find((item) => item.name === databaseName);
   return database?.uuid ?? database?.id ?? database?.database_id;
+}
+
+function withConfig(args: string[], configPath: string): string[] {
+  return configPath === "wrangler.jsonc" ? args : [...args, "--config", configPath];
 }
 
 function parseD1ListOutput(output: string): Array<{ name?: string; uuid?: string; id?: string; database_id?: string }> {

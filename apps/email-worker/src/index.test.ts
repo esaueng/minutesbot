@@ -51,10 +51,10 @@ describe("email worker invite handling", () => {
     };
 
     await handleInvite(
-      { from: "p.gustafson@wgsglobalservices.com", to: "notetaker@wgs.bot", setReject },
+      { from: "p.gustafson@example.net", to: "notetaker@meet.company.com", setReject },
       env,
-      `From: Peter <p.gustafson@wgsglobalservices.com>
-To: notetaker@wgs.bot
+      `From: Peter <p.gustafson@example.net>
+To: notetaker@meet.company.com
 Subject: TEST
 
 hello`
@@ -76,10 +76,10 @@ hello`
     };
 
     await handleInvite(
-      { from: "p.gustafson@wgs.bot", to: "notetaker@wgs.bot", setReject },
+      { from: "p.gustafson@company.com", to: "notetaker@meet.company.com", setReject },
       env,
-      `From: Peter <p.gustafson@wgs.bot>
-To: notetaker@wgs.bot
+      `From: Peter <p.gustafson@company.com>
+To: notetaker@meet.company.com
 Subject: Join Teams meeting in progress
 
 https://teams.microsoft.com/l/meetup-join/19%3alink%40thread.v2/0?context=%7b%7d`
@@ -88,8 +88,8 @@ https://teams.microsoft.com/l/meetup-join/19%3alink%40thread.v2/0?context=%7b%7d
     expect(setReject).not.toHaveBeenCalled();
     expect(queueInvite).toHaveBeenCalledWith(expect.objectContaining({ type: "create_bot", meetingId: expect.stringMatching(/^mtg_/) }));
     expect(db.meetings[0][2]).toBe("Join Teams meeting in progress");
-    expect(db.meetings[0][3]).toBe("p.gustafson@wgs.bot");
-    expect(db.attendees[0][2]).toBe("p.gustafson@wgs.bot");
+    expect(db.meetings[0][3]).toBe("p.gustafson@company.com");
+    expect(db.attendees[0][2]).toBe("p.gustafson@company.com");
     expect(db.attendees[0][6]).toBe(1);
   });
 
@@ -102,10 +102,10 @@ https://teams.microsoft.com/l/meetup-join/19%3alink%40thread.v2/0?context=%7b%7d
     };
 
     await handleInvite(
-      { from: "alice@wgs.bot", to: "wrong@wgs.bot", setReject },
+      { from: "alice@company.com", to: "wrong@company.com", setReject },
       env,
-      `From: Alice <alice@wgs.bot>
-To: wrong@wgs.bot
+      `From: Alice <alice@company.com>
+To: wrong@company.com
 
 BEGIN:VCALENDAR
 METHOD:REQUEST
@@ -114,8 +114,8 @@ UID:test
 SUMMARY:Test
 DTSTART:20260504T150000Z
 DTEND:20260504T153000Z
-ORGANIZER;CN=Alice:mailto:alice@wgs.bot
-ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@wgs.bot
+ORGANIZER;CN=Alice:mailto:alice@company.com
+ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@company.com
 DESCRIPTION:https://teams.microsoft.com/l/meetup-join/19%3atest%40thread.v2/0?context=%7b%7d
 END:VEVENT
 END:VCALENDAR`
@@ -130,7 +130,7 @@ END:VCALENDAR`
     const db = new FakeD1(
       JSON.stringify({
         ...defaultSettings,
-        recorderAliasEmails: ["sales-notes@wgs.bot", "plant-notes@wgs.bot"]
+        recorderAliasEmails: ["sales-notes@meet.company.com", "plant-notes@meet.company.com"]
       })
     );
     const env = {
@@ -140,10 +140,10 @@ END:VCALENDAR`
     };
 
     await handleInvite(
-      { from: "alice@wgs.bot", to: "sales-notes@wgs.bot", setReject },
+      { from: "alice@company.com", to: "sales-notes@meet.company.com", setReject },
       env,
-      `From: Alice <alice@wgs.bot>
-To: sales-notes@wgs.bot
+      `From: Alice <alice@company.com>
+To: sales-notes@meet.company.com
 
 BEGIN:VCALENDAR
 METHOD:REQUEST
@@ -152,8 +152,8 @@ UID:test-alias
 SUMMARY:Alias Test
 DTSTART:20260504T150000Z
 DTEND:20260504T153000Z
-ORGANIZER;CN=Alice:mailto:alice@wgs.bot
-ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@wgs.bot
+ORGANIZER;CN=Alice:mailto:alice@company.com
+ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@company.com
 DESCRIPTION:https://teams.microsoft.com/l/meetup-join/19%3atest%40thread.v2/0?context=%7b%7d
 END:VEVENT
 END:VCALENDAR`
@@ -173,10 +173,10 @@ END:VCALENDAR`
     };
 
     await handleInvite(
-      { from: "alice@wgs.bot", to: "notetaker@wgs.bot", setReject },
+      { from: "alice@company.com", to: "notetaker@meet.company.com", setReject },
       env,
-      `From: Alice <alice@wgs.bot>
-To: Alice <alice@wgs.bot>
+      `From: Alice <alice@company.com>
+To: Alice <alice@company.com>
 
 BEGIN:VCALENDAR
 METHOD:REQUEST
@@ -185,8 +185,8 @@ UID:test-forward
 SUMMARY:Forwarded Test
 DTSTART:20260504T150000Z
 DTEND:20260504T153000Z
-ORGANIZER;CN=Alice:mailto:alice@wgs.bot
-ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@wgs.bot
+ORGANIZER;CN=Alice:mailto:alice@company.com
+ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@company.com
 DESCRIPTION:https://teams.microsoft.com/l/meetup-join/19%3atest%40thread.v2/0?context=%7b%7d
 END:VEVENT
 END:VCALENDAR`
@@ -207,11 +207,11 @@ END:VCALENDAR`
     };
 
     await handleInvite(
-      { from: "alice@wgs.bot", to: "notetaker@wgs.bot", setReject },
+      { from: "alice@company.com", to: "notetaker@meet.company.com", setReject },
       env,
-      `From: Alice <alice@wgs.bot>
-To: Alex <alex@wgs.bot>, notetaker@wgs.bot
-Cc: Casey <casey@wgs.bot>, Vendor <vendor@example.net>
+      `From: Alice <alice@company.com>
+To: Alex <alex@company.com>, notetaker@meet.company.com
+Cc: Casey <casey@company.com>, Vendor <vendor@example.net>
 
 BEGIN:VCALENDAR
 METHOD:REQUEST
@@ -220,8 +220,8 @@ UID:test-header-recipients
 SUMMARY:Header Recipients
 DTSTART:20260504T150000Z
 DTEND:20260504T153000Z
-ORGANIZER;CN=Alice:mailto:alice@wgs.bot
-ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@wgs.bot
+ORGANIZER;CN=Alice:mailto:alice@company.com
+ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@company.com
 DESCRIPTION:https://teams.microsoft.com/l/meetup-join/19%3atest%40thread.v2/0?context=%7b%7d
 END:VEVENT
 END:VCALENDAR`
@@ -229,9 +229,9 @@ END:VCALENDAR`
 
     expect(setReject).not.toHaveBeenCalled();
     expect(db.attendees.map((values) => [values[2], values[6], values[7]])).toEqual([
-      ["alice@wgs.bot", 1, null],
-      ["alex@wgs.bot", 1, null],
-      ["casey@wgs.bot", 1, null],
+      ["alice@company.com", 1, null],
+      ["alex@company.com", 1, null],
+      ["casey@company.com", 1, null],
       ["vendor@example.net", 0, "excluded_external_domain"]
     ]);
   });

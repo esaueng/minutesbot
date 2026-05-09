@@ -1,22 +1,8 @@
 # Attendee Setup
 
-Use Attendee hosted services or deploy Attendee separately. Do not fork or vendor Attendee into the minutesbot Worker bundle.
+Use Attendee hosted services or deploy upstream Attendee with the Cloudflare Container scaffold. Do not fork or vendor Attendee into the minutesbot Worker bundle.
 
 Strict Cloudflare-only Attendee hosting is not feasible today. Upstream Attendee is a Dockerized Django/Celery application with Chrome/ChromeDriver, PulseAudio, ffmpeg, native Linux packages, Postgres, Redis, and long-running worker process requirements. It cannot run on Workers/D1/R2 alone.
-
-The default hosted option is:
-
-```text
-minutesbot on Cloudflare Workers + Attendee hosted services at https://app.attendee.dev
-```
-
-Example:
-
-```bash
-ATTENDEE_API_BASE_URL=https://app.attendee.dev
-wrangler secret put ATTENDEE_API_KEY
-wrangler secret put ATTENDEE_WEBHOOK_SECRET
-```
 
 The supported Cloudflare self-hosted option is:
 
@@ -37,6 +23,8 @@ Create an Attendee API key in the Attendee deployment and configure the webhook 
 ```text
 https://api.company.com/api/webhooks/attendee
 ```
+
+For a one-shot deployment, set `ATTENDEE_API_KEY` and `ATTENDEE_WEBHOOK_SECRET` in `.env.oneshot` before running `pnpm deploy:oneshot --env production`. Upstream Attendee still expects the API key to exist in its own database; if the key has not been created yet, complete the first-run Attendee admin account/API-key setup, then rerun `pnpm deploy:oneshot --env production` so minutesbot receives the final secrets.
 
 Attendee must be configured with the meeting platform prerequisites it requires to join Microsoft Teams meetings. minutesbot sends meeting URLs, receives webhooks, and processes the MP3 recording Attendee uploads to minutesbot's R2 bucket.
 
@@ -74,6 +62,8 @@ wrangler secret put DJANGO_SECRET_KEY --config deploy/attendee-container/wrangle
 wrangler secret put CREDENTIALS_ENCRYPTION_KEY --config deploy/attendee-container/wrangler.jsonc
 pnpm attendee:deploy
 ```
+
+The one-shot command wraps this flow, pushes the same secrets from `.env.oneshot`, checks `/_ops/health`, and calls `/_ops/start-workers` after deployment.
 
 Attendee companion services and credentials still need to be supplied: Postgres, Redis-compatible cache/broker, object storage credentials, meeting platform credentials, transcription provider credentials, and mail settings. R2 can be used through its S3-compatible API for object storage by setting `AWS_RECORDING_STORAGE_BUCKET_NAME`, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY`, but it does not replace Postgres or Redis. Legacy `SECRET_KEY`, `AWS_STORAGE_BUCKET_NAME`, and `AWS_S3_ENDPOINT_URL` secrets are temporarily mapped for compatibility; new deployments should use the upstream Attendee names above.
 

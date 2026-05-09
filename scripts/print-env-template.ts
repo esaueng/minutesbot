@@ -1,15 +1,17 @@
 console.log(`# minutesbot Cloudflare Worker
-APP_BASE_URL=https://minutesbot-admin.wgsglobal.app
-API_BASE_URL=https://minutesbot-api.wgsglobal.app
-ATTENDEE_WEBHOOK_BASE_URL=https://minutesbot-webhook.wgsglobal.app
-ATTENDEE_API_BASE_URL=https://app.attendee.dev
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_ENV=production
+APP_BASE_URL=https://notes.company.com
+API_BASE_URL=https://api.company.com
+ATTENDEE_WEBHOOK_BASE_URL=https://webhook.company.com
+ATTENDEE_API_BASE_URL=https://attendee.company.com
 ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME=minutesbot-artifacts
-DEFAULT_RECORDER_EMAIL=notetaker@wgs.bot
-DEFAULT_SENDER_EMAIL=notetaker@wgs.bot
+DEFAULT_RECORDER_EMAIL=notetaker@meet.company.com
+DEFAULT_SENDER_EMAIL=notetaker@meet.company.com
 ENVIRONMENT=production
 ATTENDEE_API_KEY=
 ATTENDEE_WEBHOOK_SECRET=
-AI_API_KEY=replace-with-ai-api-key
+OPENROUTER_API_KEY=
 SESSION_SECRET=
 
 # Attendee Cloudflare Container router
@@ -17,10 +19,11 @@ DATABASE_URL=postgres://...
 REDIS_URL=redis://...
 DJANGO_SECRET_KEY=
 CREDENTIALS_ENCRYPTION_KEY=
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_RECORDING_STORAGE_BUCKET_NAME=
-AWS_ENDPOINT_URL=
+R2_ACCOUNT_ID=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com
+R2_RECORDING_BUCKET_NAME=minutesbot-artifacts
 DEEPGRAM_API_KEY=
 ZOOM_CLIENT_ID=
 ZOOM_CLIENT_SECRET=`);

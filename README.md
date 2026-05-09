@@ -15,11 +15,9 @@ This repository is Cloudflare-first. The minutesbot control plane runs on Cloudf
 - Cloudflare R2 for raw invites, Attendee-uploaded recordings, transcript files, summaries, and artifacts.
 - Cloudflare Queues and Workflows for durable bot creation, transcript finalization, summaries, email, and cleanup.
 - Fetch-based Attendee REST client in `packages/attendee-client`.
-- Optional Cloudflare Container router for self-hosted upstream Attendee in `deploy/attendee-container`.
+- Cloudflare Container router for self-hosted upstream Attendee in `deploy/attendee-container`.
 
-Demo domains use `https://minutesbot-admin.wgsglobal.app` for the admin UI, `https://minutesbot-api.wgsglobal.app` for API callbacks, `https://minutesbot-webhook.wgsglobal.app` for Attendee webhooks, Attendee hosted services at `https://app.attendee.dev`, and `notetaker@wgs.bot`.
-
-Customer self-hosted examples use `https://notes.company.com`, `https://attendee.company.com`, and `notetaker@meet.company.com`.
+Self-hosted examples use `https://notes.company.com`, `https://api.company.com`, `https://webhook.company.com`, `https://attendee.company.com`, and `notetaker@meet.company.com`. The checked-in Wrangler configs use these placeholders; `pnpm deploy:oneshot --env production` generates concrete configs from `.env.oneshot`.
 
 ## Quickstart
 
@@ -28,6 +26,15 @@ pnpm install
 pnpm db:migrate:local
 pnpm seed:dev
 pnpm dev
+```
+
+For a Cloudflare-first production deployment:
+
+```bash
+cp .env.oneshot.example .env.oneshot
+# fill .env.oneshot with account, domain, Postgres, Redis, R2, Attendee, and provider values
+pnpm install
+pnpm deploy:oneshot --env production
 ```
 
 Set secrets with Wrangler, never in D1 or source:
@@ -46,6 +53,7 @@ wrangler secret put SESSION_SECRET
 - `pnpm typecheck`
 - `pnpm lint`
 - `pnpm run deploy`
+- `pnpm deploy:oneshot --env production`
 - `pnpm setup:cloudflare`
 - `pnpm attendee:prepare`
 - `pnpm attendee:deploy`

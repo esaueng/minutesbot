@@ -9,8 +9,8 @@ import { attendeeWebhookUrl, defaultSettings } from "@minutesbot/shared";
 import type { Env } from "../env";
 import { readSettings } from "../services/settingsService";
 
-const sampleInvite = `From: Alice <alice@wgs.bot>
-To: notetaker@wgs.bot
+const sampleInvite = `From: Alice <alice@company.com>
+To: notetaker@meet.company.com
 Subject: Test
 
 BEGIN:VCALENDAR
@@ -20,8 +20,8 @@ UID:test
 SUMMARY:Test
 DTSTART:20260504T150000Z
 DTEND:20260504T153000Z
-ORGANIZER;CN=Alice:mailto:alice@wgs.bot
-ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@wgs.bot
+ORGANIZER;CN=Alice:mailto:alice@company.com
+ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@company.com
 DESCRIPTION:https://teams.microsoft.com/l/meetup-join/19%3atest%40thread.v2/0?context=%7b%7d
 END:VEVENT
 END:VCALENDAR`;
@@ -51,8 +51,10 @@ export const testActionsRoute = new Hono<{ Bindings: Env }>()
   .post("/test-r2", async (c) => {
     const key = `admin-tests/${crypto.randomUUID()}.txt`;
     await c.env.ARTIFACTS.put(key, "ok");
+    const object = await c.env.ARTIFACTS.get(key);
+    if ((await object?.text()) !== "ok") return c.json({ ok: false, message: "R2 read after write failed" }, 502);
     await c.env.ARTIFACTS.delete(key);
-    return c.json({ ok: true, message: "R2 put/delete succeeded" });
+    return c.json({ ok: true, message: "R2 put/read/delete succeeded" });
   })
   .post("/test-attendee", async (c) => {
     const settings = await readSettings(c.env);

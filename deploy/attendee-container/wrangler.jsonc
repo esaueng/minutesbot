@@ -1,7 +1,6 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "minutesbot-attendee",
-  "account_id": "5e4d29b3db4faa691c672e24b0009999",
   "main": "src/index.ts",
   "compatibility_date": "2026-05-04",
   "compatibility_flags": ["nodejs_compat"],
@@ -11,7 +10,7 @@
   },
   "routes": [
     {
-      "pattern": "attendee.wgsglobal.app",
+      "pattern": "attendee.company.com",
       "custom_domain": true
     }
   ],
@@ -64,21 +63,5 @@
   ],
   "triggers": {
     "crons": ["*/30 * * * *"]
-  },
-  "env": {
-    "staging": {
-      "name": "minutesbot-attendee-staging",
-      "routes": [
-        {
-          "pattern": "staging-attendee.wgsglobal.app",
-          "custom_domain": true
-        }
-      ],
-      "vars": {
-        "DJANGO_SETTINGS_MODULE": "attendee.settings.production",
-        "ATTENDEE_WEB_INSTANCES": "1",
-        "ATTENDEE_CONTAINER_SLEEP_AFTER": "24h"
-      }
-    }
   }
 }

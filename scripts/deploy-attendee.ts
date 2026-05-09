@@ -3,6 +3,8 @@ import { runWrangler, type RunCommand } from "./ensure-cloudflare-resources";
 
 type DeployAttendeeOptions = {
   environment?: "production" | "staging";
+  baseUrl?: string;
+  configPath?: string;
   runCommand?: RunCommand;
   fetchHealth?: typeof fetch;
   log?: (message: string) => void;
@@ -23,12 +25,13 @@ export async function deployAttendee(options: DeployAttendeeOptions = {}): Promi
   const runCommand = options.runCommand ?? runWrangler;
   const log = options.log ?? console.log;
   const error = options.error ?? console.error;
-  const args = ["deploy", "--config", ATTENDEE_CONFIG_PATH];
+  const configPath = options.configPath ?? ATTENDEE_CONFIG_PATH;
+  const args = ["deploy", "--config", configPath];
   if (environment === "staging") args.push("--env", "staging");
 
   await runCommand("wrangler", args);
   await verifyAttendeeHealth({
-    baseUrl: attendeeBaseUrl(environment),
+    baseUrl: options.baseUrl ?? process.env.ATTENDEE_API_BASE_URL ?? attendeeBaseUrl(environment),
     fetchHealth: options.fetchHealth,
     log,
     error
@@ -69,7 +72,7 @@ export function parseAttendeeDeployEnvironment(args: string[]): "production" | "
 }
 
 function attendeeBaseUrl(environment: "production" | "staging"): string {
-  return environment === "staging" ? "https://staging-attendee.wgsglobal.app" : "https://attendee.wgsglobal.app";
+  return environment === "staging" ? "https://staging-attendee.example.com" : "https://attendee.example.com";
 }
 
 const isCli = process.argv[1] === fileURLToPath(import.meta.url);

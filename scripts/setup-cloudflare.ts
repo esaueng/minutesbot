@@ -7,6 +7,8 @@ const commands = [
   "wrangler secret put ATTENDEE_WEBHOOK_SECRET",
   "wrangler secret put AI_API_KEY",
   "wrangler secret put SESSION_SECRET",
+  "cp .env.oneshot.example .env.oneshot",
+  "pnpm deploy:oneshot --env production",
   "pnpm db:migrate:remote",
   "pnpm run deploy",
   "pnpm deploy:staging",
@@ -22,7 +24,8 @@ const commands = [
 
 console.log("minutesbot Cloudflare setup checklist\n");
 for (const command of commands) console.log(`- ${command}`);
-console.log("\nUse pnpm run deploy for minutesbot deployments so Cloudflare queues are checked before Wrangler runs.");
+console.log("\nUse pnpm deploy:oneshot --env production for first-time Cloudflare-first deployments.");
+console.log("Use pnpm run deploy for later minutesbot-only deployments so Cloudflare queues are checked before Wrangler runs.");
 console.log("Use pnpm attendee:deploy only after configuring external Postgres, Redis, and generated Attendee secrets.");
 console.log("Also configure Email Routing for notetaker@meet.company.com and custom domains for app/API/attendee hosts.");
-console.log("Production custom domains are minutesbot-admin.wgsglobal.app, minutesbot-api.wgsglobal.app, and minutesbot-webhook.wgsglobal.app. Keep the wgsglobal.app zone delegated to abby.ns.cloudflare.com and arvind.ns.cloudflare.com.");
+console.log("Example custom domains are notes.company.com, api.company.com, webhook.company.com, and attendee.company.com.");

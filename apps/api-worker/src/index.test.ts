@@ -138,8 +138,8 @@ describe("api worker", () => {
   });
 
   it("handles inbound email on the deployed worker entrypoint", async () => {
-    const raw = `From: Alice <alice@wgs.bot>
-To: Alice <alice@wgs.bot>
+    const raw = `From: Alice <alice@company.com>
+To: Alice <alice@company.com>
 
 BEGIN:VCALENDAR
 METHOD:REQUEST
@@ -148,8 +148,8 @@ UID:test-api-email
 SUMMARY:API Entrypoint Test
 DTSTART:20260504T150000Z
 DTEND:20260504T153000Z
-ORGANIZER;CN=Alice:mailto:alice@wgs.bot
-ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@wgs.bot
+ORGANIZER;CN=Alice:mailto:alice@company.com
+ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@company.com
 DESCRIPTION:https://teams.microsoft.com/l/meetup-join/19%3atest%40thread.v2/0?context=%7b%7d
 END:VEVENT
 END:VCALENDAR`;
@@ -158,8 +158,8 @@ END:VCALENDAR`;
 
     await entrypoint.default.email(
       {
-        from: "alice@wgs.bot",
-        to: "notetaker@wgs.bot",
+        from: "alice@company.com",
+        to: "notetaker@meet.company.com",
         raw: new Response(raw).body!,
         setReject: vi.fn()
       },
