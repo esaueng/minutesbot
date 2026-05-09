@@ -52,11 +52,6 @@
       { "binding": "INVITE_QUEUE", "queue": "minutesbot-invites" },
       { "binding": "SUMMARY_QUEUE", "queue": "minutesbot-summaries" },
       { "binding": "EMAIL_QUEUE", "queue": "minutesbot-email" }
-    ],
-    "consumers": [
-      { "queue": "minutesbot-invites", "max_batch_size": 10 },
-      { "queue": "minutesbot-summaries", "max_batch_size": 10 },
-      { "queue": "minutesbot-email", "max_batch_size": 10 }
     ]
   },
   "workflows": [

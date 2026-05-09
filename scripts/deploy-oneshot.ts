@@ -431,8 +431,7 @@ function queueConfig(queues: string[]) {
       { binding: "INVITE_QUEUE", queue: queues[0] },
       { binding: "SUMMARY_QUEUE", queue: queues[1] },
       { binding: "EMAIL_QUEUE", queue: queues[2] }
-    ],
-    consumers: queues.map((queue) => ({ queue, max_batch_size: 10 }))
+    ]
   };
 }
 
