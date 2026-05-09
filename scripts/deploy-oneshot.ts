@@ -33,6 +33,7 @@ type OneshotEnv = Record<string, string>;
 
 const GENERATED_MINUTESBOT_CONFIG = ".wrangler/oneshot-minutesbot.jsonc";
 const GENERATED_ATTENDEE_CONFIG = ".wrangler/oneshot-attendee.jsonc";
+const MAIN_CLOUDFLARE_DOMAIN = "admin.minutes.bot";
 
 const REQUIRED_ENV_KEYS = [
   "CLOUDFLARE_ACCOUNT_ID",
@@ -180,6 +181,11 @@ export function validateOneshotEnv(env: Record<string, string | undefined>, envi
   for (const key of ["APP_BASE_URL", "API_BASE_URL", "ATTENDEE_WEBHOOK_BASE_URL", "ATTENDEE_API_BASE_URL", "R2_ENDPOINT_URL"] as const) {
     assertUrl(key, env[key] ?? "");
   }
+  for (const key of ["APP_BASE_URL", "API_BASE_URL", "ATTENDEE_WEBHOOK_BASE_URL"] as const) {
+    if (new URL(env[key] ?? "").hostname !== MAIN_CLOUDFLARE_DOMAIN) {
+      throw new Error(`APP_BASE_URL, API_BASE_URL, and ATTENDEE_WEBHOOK_BASE_URL must use ${MAIN_CLOUDFLARE_DOMAIN}.`);
+    }
+  }
   for (const key of ["DEFAULT_RECORDER_EMAIL", "DEFAULT_SENDER_EMAIL"] as const) {
     if (!(env[key] ?? "").includes("@")) throw new Error(`${key} must be an email address.`);
   }
@@ -198,6 +204,7 @@ export function buildMinutesbotWranglerConfig(env: OneshotEnv, environment: Clou
       not_found_handling: "single-page-application",
       run_worker_first: true
     },
+    workers_dev: false,
     routes: uniqueRoutes([env.APP_BASE_URL, env.API_BASE_URL, env.ATTENDEE_WEBHOOK_BASE_URL]),
     compatibility_date: "2026-05-04",
     compatibility_flags: ["nodejs_compat"],
@@ -210,7 +217,8 @@ export function buildMinutesbotWranglerConfig(env: OneshotEnv, environment: Clou
       ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME: env.ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME,
       DEFAULT_RECORDER_EMAIL: env.DEFAULT_RECORDER_EMAIL,
       DEFAULT_SENDER_EMAIL: env.DEFAULT_SENDER_EMAIL,
-      ENVIRONMENT: environment
+      ENVIRONMENT: environment,
+      ...optionalCloudflareAccessVars(env)
     },
     d1_databases: [{ binding: resources.d1.binding, database_name: resources.d1.databaseName, database_id: "replace-with-d1-database-id" }],
     r2_buckets: [{ binding: "ARTIFACTS", bucket_name: env.ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME }],
@@ -234,6 +242,7 @@ export function buildAttendeeWranglerConfig(env: OneshotEnv): string {
     compatibility_date: "2026-05-04",
     compatibility_flags: ["nodejs_compat"],
     observability: { enabled: true, head_sampling_rate: 1 },
+    workers_dev: false,
     routes: uniqueRoutes([env.ATTENDEE_API_BASE_URL]),
     vars: {
       DJANGO_SETTINGS_MODULE: "attendee.settings.production",
@@ -328,6 +337,14 @@ function minutesbotSecrets(env: OneshotEnv): Record<string, string> {
     AI_API_KEY: env.OPENROUTER_API_KEY,
     SESSION_SECRET: env.SESSION_SECRET
   };
+}
+
+function optionalCloudflareAccessVars(env: OneshotEnv): Record<string, string> {
+  return Object.fromEntries(
+    ["CLOUDFLARE_ACCESS_AUD", "CLOUDFLARE_ACCESS_JWKS_URL", "CLOUDFLARE_ACCESS_ISSUER"]
+      .map((key) => [key, env[key]])
+      .filter((entry): entry is [string, string] => Boolean(entry[1]))
+  );
 }
 
 async function runSmokeChecks(options: {

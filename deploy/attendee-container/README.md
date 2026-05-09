@@ -67,7 +67,7 @@ wrangler secret put ATTENDEE_WEBHOOK_SECRET
 The minutesbot webhook URL for Attendee is:
 
 ```text
-https://webhook.company.com/api/webhooks/attendee
+https://admin.minutes.bot/api/webhooks/attendee
 ```
 
 ## Feasibility Boundary

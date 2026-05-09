@@ -1,11 +1,23 @@
 import { AppError } from "@minutesbot/shared";
 import type { Context, Next } from "hono";
 import type { Env } from "../env";
+import { isCloudflareAccessConfigured, requireCloudflareAccess } from "./cloudflareAccess";
 
-export function createAuthMiddleware() {
+type AuthMiddlewareOptions = {
+  fetchAccessJwks?: typeof fetch;
+  now?: () => number;
+};
+
+export function createAuthMiddleware(options: AuthMiddlewareOptions = {}) {
   return async function authMiddleware(c: Pick<Context<{ Bindings: Env }>, "env" | "req">, next: Next): Promise<void> {
     const env = (c.env ?? {}) as Env;
     if (isPublicApiPath(c.req.path)) {
+      await next();
+      return;
+    }
+
+    if (isCloudflareAccessConfigured(env)) {
+      await requireCloudflareAccess(c.req.raw, env, { fetcher: options.fetchAccessJwks, now: options.now });
       await next();
       return;
     }

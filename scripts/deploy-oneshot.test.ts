@@ -20,8 +20,8 @@ describe("parseOneshotArgs", () => {
 
 describe("parseEnvFile", () => {
   it("parses simple dotenv files without leaking comments into values", () => {
-    expect(parseEnvFile("# comment\nAPP_BASE_URL=https://notes.company.com\nSESSION_SECRET='secret'\n")).toEqual({
-      APP_BASE_URL: "https://notes.company.com",
+    expect(parseEnvFile("# comment\nAPP_BASE_URL=https://admin.minutes.bot\nSESSION_SECRET='secret'\n")).toEqual({
+      APP_BASE_URL: "https://admin.minutes.bot",
       SESSION_SECRET: "secret"
     });
   });
@@ -38,6 +38,12 @@ describe("validateOneshotEnv", () => {
     const env = sampleEnv({ CLOUDFLARE_ENV: "staging" });
     expect(() => validateOneshotEnv(env, "production")).toThrow("CLOUDFLARE_ENV must match --env");
   });
+
+  it("requires the main Worker URLs to use admin.minutes.bot", () => {
+    expect(() => validateOneshotEnv(sampleEnv({ API_BASE_URL: "https://wrong.example.com" }), "production")).toThrow(
+      "APP_BASE_URL, API_BASE_URL, and ATTENDEE_WEBHOOK_BASE_URL must use admin.minutes.bot"
+    );
+  });
 });
 
 describe("build oneshot Wrangler configs", () => {
@@ -45,9 +51,15 @@ describe("build oneshot Wrangler configs", () => {
     const minutesbotConfig = buildMinutesbotWranglerConfig(sampleEnv(), "production");
     const attendeeConfig = buildAttendeeWranglerConfig(sampleEnv());
 
-    expect(minutesbotConfig).toContain("notes.company.com");
-    expect(minutesbotConfig).toContain("webhook.company.com");
+    expect(minutesbotConfig).toContain("admin.minutes.bot");
+    expect(minutesbotConfig).toContain("13f67694a98579897f6175043bb595df17afdfd5129d44c33e8b937b5576ae71");
     expect(attendeeConfig).toContain("attendee.company.com");
+    expect(minutesbotConfig).toContain('"workers_dev": false');
+    expect(attendeeConfig).toContain('"workers_dev": false');
+    expect((minutesbotConfig.match(/"custom_domain": true/g) ?? []).length).toBe(1);
+    expect(minutesbotConfig).not.toContain("notes.company.com");
+    expect(minutesbotConfig).not.toContain("api.company.com");
+    expect(minutesbotConfig).not.toContain("webhook.company.com");
     expect(`${minutesbotConfig}\n${attendeeConfig}`).not.toContain("wgsglobal");
     expect(`${minutesbotConfig}\n${attendeeConfig}`).not.toContain("wgs.bot");
   });
@@ -129,10 +141,10 @@ describe("deployOneshot", () => {
     expect(secrets).toContain("wrangler secret put ATTENDEE_API_KEY --config .wrangler/oneshot-minutesbot.jsonc");
     expect(fetches).toContain("GET https://attendee.company.com/_ops/health");
     expect(fetches).toContain("POST https://attendee.company.com/_ops/start-workers");
-    expect(fetches).toContain("GET https://api.company.com/api/health");
-    expect(fetches).toContain("POST https://api.company.com/api/admin/test-r2");
-    expect(fetches).toContain("POST https://api.company.com/api/admin/test-attendee");
-    expect(fetches).toContain("POST https://webhook.company.com/api/webhooks/attendee");
+    expect(fetches).toContain("GET https://admin.minutes.bot/api/health");
+    expect(fetches).toContain("POST https://admin.minutes.bot/api/admin/test-r2");
+    expect(fetches).toContain("POST https://admin.minutes.bot/api/admin/test-attendee");
+    expect(fetches).toContain("POST https://admin.minutes.bot/api/webhooks/attendee");
     expect([...writes.keys()]).toContain(".wrangler/oneshot-minutesbot.jsonc");
     expect([...writes.keys()]).toContain(".wrangler/oneshot-attendee.jsonc");
   });
@@ -142,9 +154,9 @@ function sampleEnv(overrides: Record<string, string> = {}): Record<string, strin
   return {
     CLOUDFLARE_ACCOUNT_ID: "account-id",
     CLOUDFLARE_ENV: "production",
-    APP_BASE_URL: "https://notes.company.com",
-    API_BASE_URL: "https://api.company.com",
-    ATTENDEE_WEBHOOK_BASE_URL: "https://webhook.company.com",
+    APP_BASE_URL: "https://admin.minutes.bot",
+    API_BASE_URL: "https://admin.minutes.bot",
+    ATTENDEE_WEBHOOK_BASE_URL: "https://admin.minutes.bot",
     ATTENDEE_API_BASE_URL: "https://attendee.company.com",
     ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME: "minutesbot-artifacts",
     DEFAULT_RECORDER_EMAIL: "notetaker@meet.company.com",
@@ -163,6 +175,9 @@ function sampleEnv(overrides: Record<string, string> = {}): Record<string, strin
     DEEPGRAM_API_KEY: "deepgram-key",
     OPENROUTER_API_KEY: "openrouter-key",
     SESSION_SECRET: "session-secret",
+    CLOUDFLARE_ACCESS_AUD: "13f67694a98579897f6175043bb595df17afdfd5129d44c33e8b937b5576ae71",
+    CLOUDFLARE_ACCESS_JWKS_URL: "https://esau.cloudflareaccess.com/cdn-cgi/access/certs",
+    CLOUDFLARE_ACCESS_ISSUER: "https://esau.cloudflareaccess.com",
     ZOOM_CLIENT_ID: "zoom-client-id",
     ZOOM_CLIENT_SECRET: "zoom-client-secret",
     ...overrides

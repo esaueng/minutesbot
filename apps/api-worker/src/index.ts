@@ -11,6 +11,7 @@ import { testActionsRoute } from "./routes/testActions";
 import { corsMiddleware } from "./middleware/cors";
 import { errorMiddleware } from "./middleware/errors";
 import { adminTokenAuthMiddleware, isPublicApiPath } from "./middleware/auth";
+import { isCloudflareAccessConfigured, requireCloudflareAccess } from "./middleware/cloudflareAccess";
 import { cleanupOldArtifacts, handleQueueBatch } from "../../workflow-worker/src/queueConsumers";
 import emailWorker from "../../email-worker/src/index";
 
@@ -64,6 +65,15 @@ export async function handleFetch(request: Request, env: Env, ctx?: ExecutionCon
 
   if (url.hostname !== new URL(env.APP_BASE_URL).hostname) {
     return new Response("Not Found", { status: 404, headers: { "content-type": "text/plain; charset=UTF-8" } });
+  }
+
+  if (isCloudflareAccessConfigured(env)) {
+    try {
+      await requireCloudflareAccess(request, env);
+    } catch (error) {
+      const response = toErrorResponse(error);
+      return Response.json(response.body, { status: response.status });
+    }
   }
 
   return env.ASSETS ? env.ASSETS.fetch(request) : app.fetch(request, env, ctx);

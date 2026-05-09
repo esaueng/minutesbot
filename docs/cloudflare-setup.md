@@ -22,9 +22,17 @@ The script validates pnpm, Wrangler auth, Docker, `.env.oneshot`, external Postg
 
 Run `pnpm deploy:oneshot --env production --dry-run` to validate the plan without mutating Cloudflare resources.
 
+If Cloudflare Access is enabled for the Worker, keep these `.env.oneshot` values set so the Worker validates Access JWTs in addition to Cloudflare's edge check:
+
+```text
+CLOUDFLARE_ACCESS_AUD=13f67694a98579897f6175043bb595df17afdfd5129d44c33e8b937b5576ae71
+CLOUDFLARE_ACCESS_JWKS_URL=https://esau.cloudflareaccess.com/cdn-cgi/access/certs
+CLOUDFLARE_ACCESS_ISSUER=https://esau.cloudflareaccess.com
+```
+
 ## DNS Cutover
 
-Public traffic will not reach Workers until the relevant domain is active in Cloudflare DNS and the configured custom domains exist. Configure custom domains such as `notes.company.com`, `api.company.com`, `webhook.company.com`, and `attendee.company.com` before running the real deployment.
+Public traffic will not reach Workers until the relevant domain is active in Cloudflare DNS and the configured custom domains exist. The main minutesbot Worker must use the single custom domain `admin.minutes.bot` for the admin UI, API, and Attendee webhook endpoint. Configure the separate Attendee Container custom domain, such as `attendee.company.com`, before running the real deployment.
 
 ## Resources
 
@@ -38,7 +46,7 @@ Public traffic will not reach Workers until the relevant domain is active in Clo
 
 ## Environments
 
-The checked-in `wrangler.jsonc` uses generic `company.com` placeholders. The one-shot deploy script writes concrete ignored configs from `.env.oneshot` so account IDs, route hosts, sender addresses, and bucket names do not need to be committed.
+The checked-in `wrangler.jsonc` uses `admin.minutes.bot` as the only main Worker custom domain. The one-shot deploy script writes concrete ignored configs from `.env.oneshot` so account IDs, sender addresses, bucket names, and the separate Attendee Container host do not need to be committed.
 
 ## Commands
 
@@ -55,7 +63,7 @@ pnpm db:migrate:remote
 pnpm run deploy
 ```
 
-Configure Email Routing to send `notetaker@meet.company.com` to the Email Worker. Any notetaker aliases configured in Setup must also route to the same Email Worker. Configure custom domains such as `notes.company.com`, `api.company.com`, and `attendee.company.com` in Cloudflare DNS/routes.
+Configure Email Routing to send `notetaker@meet.company.com` to the Email Worker. Any notetaker aliases configured in Setup must also route to the same Email Worker. Configure `admin.minutes.bot` as the only main Worker custom domain, plus the separate Attendee Container custom domain, in Cloudflare DNS/routes.
 
 Protect the admin UI with Cloudflare Access for the MVP.
 
@@ -76,5 +84,5 @@ minutesbot supplies `recording_settings.format = mp3` and `external_media_storag
 For one-shot Cloudflare-first deployments, use `deploy/attendee-container` to run upstream Attendee on Cloudflare Containers, backed by external Postgres and Redis-compatible services. Set `ATTENDEE_API_BASE_URL` to the Attendee Container domain and configure the webhook URL in Attendee:
 
 ```text
-https://<api-domain>/api/webhooks/attendee
+https://admin.minutes.bot/api/webhooks/attendee
 ```

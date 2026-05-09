@@ -17,7 +17,7 @@ This repository is Cloudflare-first. The minutesbot control plane runs on Cloudf
 - Fetch-based Attendee REST client in `packages/attendee-client`.
 - Cloudflare Container router for self-hosted upstream Attendee in `deploy/attendee-container`.
 
-Self-hosted examples use `https://notes.company.com`, `https://api.company.com`, `https://webhook.company.com`, `https://attendee.company.com`, and `notetaker@meet.company.com`. The checked-in Wrangler configs use these placeholders; `pnpm deploy:oneshot --env production` generates concrete configs from `.env.oneshot`.
+The main Cloudflare Worker uses `https://admin.minutes.bot` for the admin UI, API, and Attendee webhook endpoint. Self-hosted examples keep Attendee on a separate host such as `https://attendee.company.com`, with `notetaker@meet.company.com` as the recorder mailbox example. `pnpm deploy:oneshot --env production` generates ignored configs from `.env.oneshot`.
 
 ## Quickstart
 

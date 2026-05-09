@@ -1,14 +1,14 @@
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_ACCOUNT_ID = "";
-const DEFAULT_ZONE_NAME = "company.com";
-const DEFAULT_WEBHOOK_HOST = "webhook.company.com";
+const DEFAULT_ZONE_NAME = "minutes.bot";
+const DEFAULT_WEBHOOK_HOST = "admin.minutes.bot";
 const DEFAULT_WEBHOOK_PATH = "/api/webhooks/attendee";
 const FIREWALL_CUSTOM_PHASE = "http_request_firewall_custom";
 
 export const ATTENDEE_WEBHOOK_SECURITY_EXCEPTION_REF = "minutesbot_attendee_webhook_security_exception";
 export const ATTENDEE_WEBHOOK_SECURITY_EXCEPTION_EXPRESSION =
-  'http.host eq "webhook.company.com" and http.request.uri.path eq "/api/webhooks/attendee" and http.request.method eq "POST"';
+  'http.host eq "admin.minutes.bot" and http.request.uri.path eq "/api/webhooks/attendee" and http.request.method eq "POST"';
 
 type CloudflareFetch = typeof fetch;
 

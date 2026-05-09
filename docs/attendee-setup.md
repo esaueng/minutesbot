@@ -21,7 +21,7 @@ wrangler secret put ATTENDEE_WEBHOOK_SECRET
 Create an Attendee API key in the Attendee deployment and configure the webhook secret. The webhook URL is:
 
 ```text
-https://api.company.com/api/webhooks/attendee
+https://admin.minutes.bot/api/webhooks/attendee
 ```
 
 For a one-shot deployment, set `ATTENDEE_API_KEY` and `ATTENDEE_WEBHOOK_SECRET` in `.env.oneshot` before running `pnpm deploy:oneshot --env production`. Upstream Attendee still expects the API key to exist in its own database; if the key has not been created yet, complete the first-run Attendee admin account/API-key setup, then rerun `pnpm deploy:oneshot --env production` so minutesbot receives the final secrets.

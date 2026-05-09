@@ -12,6 +12,6 @@ describe("attendeeWebhookUrl", () => {
   });
 
   it("falls back to API_BASE_URL for existing deployments", () => {
-    expect(attendeeWebhookUrl({ API_BASE_URL: "https://api.company.com/" })).toBe("https://api.company.com/api/webhooks/attendee");
+    expect(attendeeWebhookUrl({ API_BASE_URL: "https://admin.minutes.bot/" })).toBe("https://admin.minutes.bot/api/webhooks/attendee");
   });
 });
