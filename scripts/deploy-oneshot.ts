@@ -218,8 +218,7 @@ export function buildMinutesbotWranglerConfig(env: OneshotEnv, environment: Clou
       ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME: env.ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME,
       DEFAULT_RECORDER_EMAIL: env.DEFAULT_RECORDER_EMAIL,
       DEFAULT_SENDER_EMAIL: env.DEFAULT_SENDER_EMAIL,
-      ENVIRONMENT: environment,
-      ...optionalCloudflareAccessVars(env)
+      ENVIRONMENT: environment
     },
     d1_databases: [{ binding: resources.d1.binding, database_name: resources.d1.databaseName, database_id: "replace-with-d1-database-id" }],
     r2_buckets: [{ binding: "ARTIFACTS", bucket_name: env.ATTENDEE_EXTERNAL_MEDIA_BUCKET_NAME }],
@@ -338,14 +337,6 @@ function minutesbotSecrets(env: OneshotEnv): Record<string, string> {
     AI_API_KEY: env.OPENROUTER_API_KEY,
     SESSION_SECRET: env.SESSION_SECRET
   };
-}
-
-function optionalCloudflareAccessVars(env: OneshotEnv): Record<string, string> {
-  return Object.fromEntries(
-    ["CLOUDFLARE_ACCESS_AUD", "CLOUDFLARE_ACCESS_JWKS_URL", "CLOUDFLARE_ACCESS_ISSUER"]
-      .map((key) => [key, env[key]])
-      .filter((entry): entry is [string, string] => Boolean(entry[1]))
-  );
 }
 
 async function runSmokeChecks(options: {

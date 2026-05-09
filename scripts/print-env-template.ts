@@ -13,9 +13,6 @@ ATTENDEE_API_KEY=
 ATTENDEE_WEBHOOK_SECRET=
 OPENROUTER_API_KEY=
 SESSION_SECRET=
-CLOUDFLARE_ACCESS_AUD=13f67694a98579897f6175043bb595df17afdfd5129d44c33e8b937b5576ae71
-CLOUDFLARE_ACCESS_JWKS_URL=https://esau.cloudflareaccess.com/cdn-cgi/access/certs
-CLOUDFLARE_ACCESS_ISSUER=https://esau.cloudflareaccess.com
 
 # Attendee Cloudflare Container router
 DATABASE_URL=postgres://...

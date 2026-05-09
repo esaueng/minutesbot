@@ -55,7 +55,9 @@ describe("build oneshot Wrangler configs", () => {
     expect(minutesbotConfig).toContain("app.minutes.bot");
     expect(minutesbotConfig).toContain("admin.minutes.bot");
     expect(minutesbotConfig).toContain("api.minutes.bot");
-    expect(minutesbotConfig).toContain("13f67694a98579897f6175043bb595df17afdfd5129d44c33e8b937b5576ae71");
+    expect(minutesbotConfig).not.toContain("CLOUDFLARE_ACCESS_AUD");
+    expect(minutesbotConfig).not.toContain("CLOUDFLARE_ACCESS_JWKS_URL");
+    expect(minutesbotConfig).not.toContain("CLOUDFLARE_ACCESS_ISSUER");
     expect(attendeeConfig).toContain("attendee.company.com");
     expect(minutesbotConfig).toContain('"workers_dev": false');
     expect(attendeeConfig).toContain('"workers_dev": false');
@@ -180,9 +182,6 @@ function sampleEnv(overrides: Record<string, string> = {}): Record<string, strin
     DEEPGRAM_API_KEY: "deepgram-key",
     OPENROUTER_API_KEY: "openrouter-key",
     SESSION_SECRET: "session-secret",
-    CLOUDFLARE_ACCESS_AUD: "13f67694a98579897f6175043bb595df17afdfd5129d44c33e8b937b5576ae71",
-    CLOUDFLARE_ACCESS_JWKS_URL: "https://esau.cloudflareaccess.com/cdn-cgi/access/certs",
-    CLOUDFLARE_ACCESS_ISSUER: "https://esau.cloudflareaccess.com",
     ZOOM_CLIENT_ID: "zoom-client-id",
     ZOOM_CLIENT_SECRET: "zoom-client-secret",
     ...overrides

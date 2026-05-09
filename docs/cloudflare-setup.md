@@ -22,14 +22,6 @@ The script validates pnpm, Wrangler auth, Docker, `.env.oneshot`, external Postg
 
 Run `pnpm deploy:oneshot --env production --dry-run` to validate the plan without mutating Cloudflare resources.
 
-If Cloudflare Access is enabled for the Worker, keep these `.env.oneshot` values set so the Worker validates Access JWTs in addition to Cloudflare's edge check:
-
-```text
-CLOUDFLARE_ACCESS_AUD=13f67694a98579897f6175043bb595df17afdfd5129d44c33e8b937b5576ae71
-CLOUDFLARE_ACCESS_JWKS_URL=https://esau.cloudflareaccess.com/cdn-cgi/access/certs
-CLOUDFLARE_ACCESS_ISSUER=https://esau.cloudflareaccess.com
-```
-
 ## DNS Cutover
 
 Public traffic will not reach Workers until the relevant domain is active in Cloudflare DNS and the configured custom domains exist. The main minutesbot Worker custom domain is `app.minutes.bot`. Runtime config uses `https://api.minutes.bot` for API calls and `https://admin.minutes.bot` for the admin UI and Attendee webhook base URL. Configure the separate Attendee Container custom domain, such as `attendee.company.com`, before running the real deployment.

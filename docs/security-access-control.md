@@ -26,15 +26,7 @@ Attendee webhooks are still protected by `ATTENDEE_WEBHOOK_SECRET`.
 
 ## Cloudflare Access JWT Validation
 
-The Worker validates the `Cf-Access-Jwt-Assertion` header when these non-secret vars are configured:
-
-```text
-CLOUDFLARE_ACCESS_AUD=13f67694a98579897f6175043bb595df17afdfd5129d44c33e8b937b5576ae71
-CLOUDFLARE_ACCESS_JWKS_URL=https://esau.cloudflareaccess.com/cdn-cgi/access/certs
-CLOUDFLARE_ACCESS_ISSUER=https://esau.cloudflareaccess.com
-```
-
-These values match the Access application enabled for `admin.minutes.bot`. The JWKS URL may rotate keys over time; the Worker loads the current key set and caches it briefly.
+The Worker can validate the `Cf-Access-Jwt-Assertion` header when deployment-specific Access JWT vars are configured. The checked-in production config does not set those vars because Access is handled outside the Worker by default.
 
 ## Cloudflare Access and WAF
 
