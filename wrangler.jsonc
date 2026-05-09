@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "minutesbot",
+  "name": "minutesbot-wgs",
   "main": "apps/api-worker/src/index.ts",
   "assets": {
     "directory": "./apps/web/dist",
