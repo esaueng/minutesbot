@@ -197,6 +197,7 @@ export function buildMinutesbotWranglerConfig(env: OneshotEnv, environment: Clou
     routes: uniqueRoutes([env.APP_BASE_URL, env.API_BASE_URL, env.BOT_WEBHOOK_BASE_URL]),
     compatibility_date: "2026-05-04",
     compatibility_flags: ["nodejs_compat"],
+    migrations_dir: "../migrations",
     observability: { enabled: true, head_sampling_rate: 1 },
     vars: {
       APP_BASE_URL: env.APP_BASE_URL,
