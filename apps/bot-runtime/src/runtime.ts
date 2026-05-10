@@ -128,7 +128,8 @@ async function clickTeamsWebEntry(page: any, visibleTimeout = 20_000, actionTime
       scope.getByText(/continue on this browser|join on the web|use the web app/i)
     ]),
     visibleTimeout,
-    actionTimeout
+    actionTimeout,
+    { suppressClickErrors: true }
   );
   if (!clicked) return false;
   await page.waitForLoadState("domcontentloaded", { timeout: actionTimeout }).catch(() => undefined);
@@ -151,7 +152,7 @@ async function joinFromPrejoin(page: any, botName: string, mode: JoinMode): Prom
 
     filledName = (await fillAny(guestNameLocators(page), botName, CONTROL_PROBE_TIMEOUT_MS, CONTROL_ACTION_TIMEOUT_MS)) || filledName;
 
-    if (await clickAny(joinButtonLocators(page), CONTROL_PROBE_TIMEOUT_MS, 30_000)) {
+    if (await clickAny(joinButtonLocators(page), CONTROL_PROBE_TIMEOUT_MS, 30_000, { suppressClickErrors: true })) {
       return waitForJoinedOrLobby(page);
     }
 
@@ -226,7 +227,7 @@ function locatorScopes(page: any): any[] {
 }
 
 async function dismissDevicePrompts(page: any, visibleTimeout = 3_000, actionTimeout = visibleTimeout): Promise<void> {
-  await clickAny(locatorScopes(page).map((scope) => scope.getByRole("button", { name: /continue without audio or video/i })), visibleTimeout, actionTimeout);
+  await clickAny(locatorScopes(page).map((scope) => scope.getByRole("button", { name: /continue without audio or video/i })), visibleTimeout, actionTimeout, { suppressClickErrors: true });
   for (const scope of locatorScopes(page)) {
     for (const label of [/microphone/i, /camera/i]) {
       const toggle = scope.getByRole("switch", { name: label });
@@ -240,7 +241,7 @@ async function waitForJoinedOrLobby(page: any): Promise<"waiting_room" | "joined
   let sawMeetingNotStarted = false;
 
   for (let attempt = 0; attempt < MEETING_NOT_STARTED_MAX_ATTEMPTS; attempt += 1) {
-    await clickAny(joinButtonLocators(page), CONTROL_PROBE_TIMEOUT_MS, 30_000);
+    await clickAny(joinButtonLocators(page), CONTROL_PROBE_TIMEOUT_MS, 30_000, { suppressClickErrors: true });
     const state = await joinedOrLobbyState(page, CONTROL_PROBE_TIMEOUT_MS);
     if (state) return state;
 
@@ -439,9 +440,9 @@ function runtimeDiagnosticVersion(): string {
   return process.env.BOT_RUNTIME_VERSION?.trim() || "unknown";
 }
 
-async function clickAny(locators: any[], visibleTimeout: number, actionTimeout = visibleTimeout): Promise<boolean> {
+async function clickAny(locators: any[], visibleTimeout: number, actionTimeout = visibleTimeout, options: { suppressClickErrors?: boolean } = {}): Promise<boolean> {
   for (const locator of locators) {
-    if (await clickIfVisible(locator, visibleTimeout, actionTimeout)) return true;
+    if (await clickIfVisible(locator, visibleTimeout, actionTimeout, options)) return true;
   }
   return false;
 }
@@ -453,9 +454,14 @@ async function fillAny(locators: any[], value: string, visibleTimeout: number, a
   return false;
 }
 
-async function clickIfVisible(locator: any, visibleTimeout: number, actionTimeout = visibleTimeout): Promise<boolean> {
+async function clickIfVisible(locator: any, visibleTimeout: number, actionTimeout = visibleTimeout, options: { suppressClickErrors?: boolean } = {}): Promise<boolean> {
   if (!(await locator.first().isVisible({ timeout: visibleTimeout }).catch(() => false))) return false;
-  await locator.first().click({ timeout: actionTimeout });
+  try {
+    await locator.first().click({ timeout: actionTimeout });
+  } catch (error) {
+    if (options.suppressClickErrors) return false;
+    throw error;
+  }
   return true;
 }
 

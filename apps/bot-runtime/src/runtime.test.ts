@@ -88,6 +88,32 @@ describe("Teams runtime browser flow", () => {
     expect(joinButton.click).toHaveBeenCalled();
   });
 
+  it("keeps polling when a Teams browser-entry text locator is visible but not actionable", async () => {
+    let prejoinRendered = false;
+    let joined = false;
+    const webEntryText = visibleLocator();
+    webEntryText.click.mockRejectedValue(new Error("locator.click: Timeout 20000ms exceeded"));
+    const joinButton = visibleLocator(() => {
+      joined = true;
+    });
+    const lobbyMessage = visibleLocator();
+    const page = fakePage({
+      url: "https://teams.microsoft.com/v2/?meetingjoin=true",
+      roles: () => (prejoinRendered ? [{ role: "button", name: "Join now", locator: joinButton }] : []),
+      texts: () => [
+        ...(!prejoinRendered ? [{ text: "Continue on this browser", locator: webEntryText }] : []),
+        ...(joined ? [{ text: "Someone will let you in soon", locator: lobbyMessage }] : [])
+      ],
+      onWaitForTimeout: async () => {
+        prejoinRendered = true;
+      }
+    });
+
+    await expect(__runtimeTest.joinAsGuest(page, guestInput())).resolves.toBe("waiting_room");
+    expect(webEntryText.click).toHaveBeenCalledWith({ timeout: 1_000 });
+    expect(joinButton.click).toHaveBeenCalledWith({ timeout: 30_000 });
+  });
+
   it("waits for a meeting that has not started and joins when Teams enables the join control", async () => {
     let meetingStarted = false;
     let joined = false;
