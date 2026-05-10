@@ -9,6 +9,7 @@ type BotContainerEnv = {
   BOT_API_BASE_URL?: string;
   BOT_RECORDING_BUCKET_NAME?: string;
   BOT_CONTAINER_SLEEP_AFTER?: string;
+  BOT_CONTAINER_INSTANCE_ID?: string;
   BOT_WEBHOOK_BASE_URL?: string;
   TEAMS_RECORDER_EMAIL?: string;
   TEAMS_RECORDER_PASSWORD?: string;
@@ -30,7 +31,7 @@ export default {
     if (url.pathname === "/internal/recordings" && request.method === "PUT") {
       return storeRecording(request, env);
     }
-    const container = getContainer(env.MEETING_BOT, "primary");
+    const container = getContainer(env.MEETING_BOT, env.BOT_CONTAINER_INSTANCE_ID || "primary");
     return container.fetch(request);
   }
 };

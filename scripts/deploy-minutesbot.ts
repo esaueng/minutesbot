@@ -25,7 +25,7 @@ export async function deployMinutesbot(options: DeployMinutesbotOptions = {}): P
   const error = options.error ?? console.error;
 
   await ensureResources({ environment, runCommand, log, error });
-  await runCommand("wrangler", ["deploy", "--env", environment]);
+  await runCommand("wrangler", environment === "production" ? ["deploy"] : ["deploy", "--env", environment]);
 }
 
 export function parseDeployEnvironment(args: string[]): CloudflareEnvironment {

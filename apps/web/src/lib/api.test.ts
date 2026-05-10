@@ -48,4 +48,19 @@ describe("web api client auth", () => {
     });
     await expect(apiGet<{ ok: boolean }>("/api/settings")).rejects.toBeInstanceOf(ApiError);
   });
+
+  it("uses plain admin test action messages on failed responses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ ok: false, message: "BOT_UPSTREAM_ERROR: Meeting bot request failed with 502" }), { status: 502 })
+      )
+    );
+
+    await expect(apiGet<{ ok: boolean }>("/api/admin/status")).rejects.toMatchObject({
+      status: 502,
+      code: "REQUEST_FAILED",
+      message: "BOT_UPSTREAM_ERROR: Meeting bot request failed with 502"
+    });
+  });
 });

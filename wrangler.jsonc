@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "minutesbot",
+  "account_id": "747b74cbd7d019dd7aeecb2c24a4bf10",
   "main": "apps/api-worker/src/index.ts",
   "assets": {
     "directory": "./apps/web/dist",
@@ -24,7 +25,9 @@
     }
   ],
   "compatibility_date": "2026-05-04",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
@@ -43,7 +46,7 @@
     {
       "binding": "DB",
       "database_name": "minutesbot",
-      "database_id": "replace-with-d1-database-id"
+      "database_id": "ad101cd3-8733-4171-bba4-90928adb1f4f"
     }
   ],
   "r2_buckets": [
@@ -55,14 +58,25 @@
   "migrations": [
     {
       "tag": "remove-meeting-bot-container-from-minutesbot",
-      "deleted_classes": ["MeetingBotContainer"]
+      "deleted_classes": [
+        "MeetingBotContainer"
+      ]
     }
   ],
   "queues": {
     "producers": [
-      { "binding": "INVITE_QUEUE", "queue": "minutesbot-invites" },
-      { "binding": "SUMMARY_QUEUE", "queue": "minutesbot-summaries" },
-      { "binding": "EMAIL_QUEUE", "queue": "minutesbot-email" }
+      {
+        "binding": "INVITE_QUEUE",
+        "queue": "minutesbot-invites"
+      },
+      {
+        "binding": "SUMMARY_QUEUE",
+        "queue": "minutesbot-summaries"
+      },
+      {
+        "binding": "EMAIL_QUEUE",
+        "queue": "minutesbot-email"
+      }
     ]
   },
   "workflows": [
@@ -90,7 +104,9 @@
   "send_email": [
     {
       "name": "SEND_EMAIL",
-      "allowed_sender_addresses": ["notetaker@minutes.bot"]
+      "allowed_sender_addresses": [
+        "notetaker@minutes.bot"
+      ]
     }
   ]
 }

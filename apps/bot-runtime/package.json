@@ -14,6 +14,7 @@
   "dependencies": {
     "@minutesbot/shared": "workspace:*",
     "hono": "^4.6.20",
+    "playwright": "1.49.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {

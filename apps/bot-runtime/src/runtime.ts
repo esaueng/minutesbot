@@ -9,7 +9,11 @@ type RuntimeProcessEnv = Record<string, string | undefined>;
 export function createDefaultDeps(env: RuntimeProcessEnv): BotRuntimeDeps {
   return {
     env,
-    checkBinary: async (name) => binaryAvailable(name === "chromium" ? env.CHROMIUM_EXECUTABLE_PATH || "chromium" : "ffmpeg"),
+    checkBinary: async (name) => {
+      if (name === "ffmpeg") return binaryAvailable("ffmpeg");
+      if (env.CHROMIUM_EXECUTABLE_PATH) return binaryAvailable(env.CHROMIUM_EXECUTABLE_PATH);
+      return playwrightChromiumAvailable();
+    },
     recorder: createBrowserRecorder(env),
     recordingStore: createHttpRecordingStore(env),
     sendWebhook: async ({ url, body, internalToken }) => {
@@ -127,6 +131,15 @@ function runFfmpeg(args: string[]): Promise<void> {
 
 function binaryAvailable(name: string): boolean {
   return spawnSync(name, ["--version"], { stdio: "ignore" }).status === 0 || spawnSync("which", [name], { stdio: "ignore" }).status === 0;
+}
+
+async function playwrightChromiumAvailable(): Promise<boolean> {
+  try {
+    const browser = await loadPlaywrightChromium();
+    return binaryAvailable(browser.executablePath());
+  } catch {
+    return false;
+  }
 }
 
 function contentTypeForFormat(format: string): string {

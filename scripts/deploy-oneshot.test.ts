@@ -68,7 +68,7 @@ describe("build oneshot Wrangler configs", () => {
     expect(botConfig).toContain("meeting.minutes.bot");
     expect(minutesbotConfig).toContain('"binding": "BOT_RUNTIME"');
     expect(minutesbotConfig).toContain('"service": "minutesbot-meeting-bot"');
-    expect(botConfig).toContain("../apps/bot-runtime/Dockerfile");
+    expect(botConfig).toContain("../Dockerfile.bot");
     expect(botConfig).not.toContain(".attendee/upstream");
     expect(botConfig).not.toContain("DJANGO_SETTINGS_MODULE");
     expect(minutesbotConfig).toContain('"workers_dev": false');

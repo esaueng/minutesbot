@@ -17,7 +17,7 @@ describe("deployMinutesbot", () => {
       error: () => undefined
     });
 
-    expect(events).toEqual(["ensure:production", "wrangler deploy --env production"]);
+    expect(events).toEqual(["ensure:production", "wrangler deploy"]);
   });
 
   it("ensures staging queues before deploying staging", async () => {

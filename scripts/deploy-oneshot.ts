@@ -239,7 +239,7 @@ export function buildBotWranglerConfig(env: OneshotEnv, environment: CloudflareE
       BOT_WEBHOOK_BASE_URL: env.BOT_WEBHOOK_BASE_URL
     },
     containers: [
-      { class_name: "MeetingBotContainer", image: "../apps/bot-runtime/Dockerfile", max_instances: 2, instance_type: "standard-2" }
+      { class_name: "MeetingBotContainer", image: "../Dockerfile.bot", max_instances: 2, instance_type: "standard-2" }
     ],
     durable_objects: {
       bindings: [

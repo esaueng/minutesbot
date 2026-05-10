@@ -189,7 +189,6 @@ async function missingRuntimeSettings(deps: BotRuntimeDeps): Promise<string[]> {
   const missing: string[] = [];
   if (!deps.env.BOT_RECORDING_BUCKET_NAME) missing.push("BOT_RECORDING_BUCKET_NAME");
   if (!deps.env.TEAMS_RECORDER_PASSWORD && deps.env.BOT_ALLOW_GUEST_JOIN === "false") missing.push("TEAMS_RECORDER_PASSWORD");
-  if (!deps.env.TEAMS_RECORDER_PASSWORD && deps.env.BOT_ALLOW_GUEST_JOIN !== "true") missing.push("TEAMS_RECORDER_PASSWORD");
   if (!(await deps.checkBinary("chromium"))) missing.push("chromium");
   if (!(await deps.checkBinary("ffmpeg"))) missing.push("ffmpeg");
   return missing;

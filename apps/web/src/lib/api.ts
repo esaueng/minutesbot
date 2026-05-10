@@ -57,9 +57,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       ...(init.headers ?? {})
     }
   });
-  const data = (await response.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
+  const data = (await response.json().catch(() => null)) as { error?: { code?: string; message?: string }; message?: string } | null;
   if (!response.ok) {
-    const message = data?.error?.message ?? `Request failed with ${response.status}`;
+    const message = data?.error?.message ?? data?.message ?? `Request failed with ${response.status}`;
     throw new ApiError(message, response.status, data?.error?.code);
   }
   return data as T;

@@ -4,7 +4,7 @@ import { createBotRuntimeApp, type BotRuntimeDeps } from "./app";
 describe("bot runtime app", () => {
   it("reports missing runtime dependencies clearly", async () => {
     const app = createBotRuntimeApp({
-      env: { BOT_RECORDING_BUCKET_NAME: "minutesbot-artifacts" },
+      env: { BOT_RECORDING_BUCKET_NAME: "minutesbot-artifacts", BOT_ALLOW_GUEST_JOIN: "false" },
       checkBinary: async (name) => name !== "ffmpeg",
       recorder: fakeRecorder(),
       recordingStore: fakeRecordingStore(),
@@ -18,6 +18,26 @@ describe("bot runtime app", () => {
       ok: false,
       runtime: "meeting-bot-container",
       missing: ["TEAMS_RECORDER_PASSWORD", "ffmpeg"]
+    });
+  });
+
+  it("passes health in guest mode without a recorder password", async () => {
+    const app = createBotRuntimeApp({
+      env: { BOT_RECORDING_BUCKET_NAME: "minutesbot-artifacts" },
+      checkBinary: async () => true,
+      recorder: fakeRecorder(),
+      recordingStore: fakeRecordingStore(),
+      sendWebhook: vi.fn()
+    });
+
+    const response = await app.request("/_ops/health");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      runtime: "meeting-bot-container",
+      missing: [],
+      auth: "guest"
     });
   });
 
