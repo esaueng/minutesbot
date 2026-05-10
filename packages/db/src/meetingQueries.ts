@@ -72,6 +72,21 @@ export async function getMeeting(db: D1Database, id: string): Promise<MeetingRow
   return db.prepare("SELECT * FROM meetings WHERE id = ?").bind(id).first<MeetingRow>();
 }
 
+export async function deleteMeetingHistory(db: D1Database, id: string): Promise<void> {
+  const dependentTables = [
+    "attendees",
+    "attendee_webhook_events",
+    "transcript_segments",
+    "artifacts",
+    "email_deliveries",
+    "summaries"
+  ];
+  for (const table of dependentTables) {
+    await db.prepare(`DELETE FROM ${table} WHERE meeting_id = ?`).bind(id).run();
+  }
+  await db.prepare("DELETE FROM meetings WHERE id = ?").bind(id).run();
+}
+
 export async function findMeetingByBot(db: D1Database, botId: string): Promise<MeetingRow | null> {
   return db.prepare("SELECT * FROM meetings WHERE attendee_bot_id = ?").bind(botId).first<MeetingRow>();
 }

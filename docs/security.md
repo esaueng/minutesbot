@@ -8,7 +8,7 @@ The meeting bot runtime stores active runtime state in its container process and
 
 ## Secrets
 
-Store `TEAMS_RECORDER_PASSWORD`, `AI_API_KEY`, `EMAIL_API_KEY`, `SMTP_PASSWORD`, and `SESSION_SECRET` with `wrangler secret put`. D1 stores only configured status or secret references. The one-shot deploy flow generates and pushes the internal meeting bot token automatically.
+Store `AI_API_KEY`, `EMAIL_API_KEY`, `SMTP_PASSWORD`, and `SESSION_SECRET` with `wrangler secret put`. D1 stores only configured status or secret references. The one-shot deploy flow generates and pushes the internal meeting bot token automatically.
 
 ## Webhooks
 

@@ -123,6 +123,7 @@ describe("deployOneshot", () => {
     expect([...writes.keys()]).toEqual([]);
     expect(messages).toContain("[dry-run] deploy minutesbot Worker");
     expect(messages).toContain("[dry-run] put meeting bot container secret BOT_INTERNAL_TOKEN");
+    expect(messages).not.toContain("[dry-run] put meeting bot container secret TEAMS_RECORDER_PASSWORD");
     expect(messages).not.toContain("[dry-run] put meeting bot container secret BOT_API_KEY");
   });
 
@@ -166,7 +167,7 @@ describe("deployOneshot", () => {
     expect(commands).toContain("pnpm run build");
     expect(commands).toContain("wrangler deploy --config .wrangler/oneshot-minutesbot.jsonc");
     expect(secrets).toContain("wrangler secret put BOT_INTERNAL_TOKEN --config .wrangler/oneshot-bot.jsonc");
-    expect(secrets).toContain("wrangler secret put TEAMS_RECORDER_PASSWORD --config .wrangler/oneshot-bot.jsonc");
+    expect(secrets).not.toContain("wrangler secret put TEAMS_RECORDER_PASSWORD --config .wrangler/oneshot-bot.jsonc");
     expect(secrets).toContain("wrangler secret put BOT_INTERNAL_TOKEN --config .wrangler/oneshot-minutesbot.jsonc");
     expect(secrets).not.toContain("wrangler secret put BOT_API_KEY --config .wrangler/oneshot-bot.jsonc");
     expect(secrets).not.toContain("wrangler secret put BOT_WEBHOOK_SECRET --config .wrangler/oneshot-minutesbot.jsonc");
@@ -220,8 +221,6 @@ function sampleEnv(overrides: Record<string, string> = {}): Record<string, strin
     BOT_RECORDING_BUCKET_NAME: "minutesbot-artifacts",
     DEFAULT_RECORDER_EMAIL: "notetaker@minutes.bot",
     DEFAULT_SENDER_EMAIL: "notetaker@minutes.bot",
-    TEAMS_RECORDER_EMAIL: "notetaker@company.com",
-    TEAMS_RECORDER_PASSWORD: "teams-recorder-password",
     OPENROUTER_API_KEY: "openrouter-key",
     SESSION_SECRET: "session-secret",
     BOT_RUNTIME_VERSION: "runtime-test-version",

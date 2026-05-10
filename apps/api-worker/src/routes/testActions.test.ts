@@ -283,7 +283,7 @@ describe("admin test actions", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
-        new Response(JSON.stringify({ ok: false, runtime: "meeting-bot-container", missing: ["TEAMS_RECORDER_PASSWORD", "ffmpeg"] }), {
+        new Response(JSON.stringify({ ok: false, runtime: "meeting-bot-container", missing: ["ffmpeg", "pulseaudio"] }), {
           status: 503,
           headers: { "content-type": "application/json" }
         })
@@ -308,7 +308,7 @@ describe("admin test actions", () => {
     expect(response.status).toBe(502);
     await expect(response.json()).resolves.toEqual({
       ok: false,
-      message: "BOT_UNHEALTHY: Meeting bot health check failed: missing TEAMS_RECORDER_PASSWORD, ffmpeg"
+      message: "BOT_UNHEALTHY: Meeting bot health check failed: missing ffmpeg, pulseaudio"
     });
   });
 });

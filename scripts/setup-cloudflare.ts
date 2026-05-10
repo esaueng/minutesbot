@@ -11,7 +11,6 @@ const commands = [
   "pnpm run deploy",
   "pnpm deploy:staging",
   "pnpm deploy:production",
-  "wrangler secret put TEAMS_RECORDER_PASSWORD --config deploy/bot-container/wrangler.jsonc",
   "pnpm bot:deploy"
 ];
 

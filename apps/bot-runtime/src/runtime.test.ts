@@ -230,6 +230,72 @@ describe("Teams runtime browser flow", () => {
     }
   });
 
+  it("emits prejoin before Teams admission and does not emit joined before confirmation", async () => {
+    const states: string[] = [];
+    let joined = false;
+    const joinButton = visibleLocator(() => {
+      joined = true;
+    });
+    const lobbyMessage = visibleLocator();
+    const page = fakePage({
+      roles: [{ role: "button", name: "Join now", locator: joinButton }],
+      texts: () => (joined ? [{ text: "Someone will let you in soon", locator: lobbyMessage }] : [])
+    });
+
+    await expect(
+      __runtimeTest.joinAsGuest(page, {
+        ...guestInput(),
+        onState: async (state) => {
+          states.push(state);
+        }
+      })
+    ).resolves.toBe("waiting_room");
+
+    expect(states).toEqual(["prejoin"]);
+  });
+
+  it("starts PulseAudio capture from the Teams monitor and records MP3 bytes", async () => {
+    const commands: Array<{ command: string; args: string[] }> = [];
+    const files = new Map<string, Uint8Array>([["/tmp/minutesbot-recording/recording.mp3", new Uint8Array([7, 8, 9])]]);
+    const result = await __runtimeTest.recordBrowserAudio(
+      { BOT_RECORDING_SECONDS: "3", BOT_AUDIO_SINK_NAME: "teams_capture" },
+      {
+        mkdtemp: async () => "/tmp/minutesbot-recording",
+        readFile: async (path) => files.get(path) ?? new Uint8Array(),
+        rm: vi.fn(async () => undefined),
+        runCommand: async (command, args) => {
+          commands.push({ command, args });
+        }
+      }
+    );
+
+    expect(commands).toEqual([
+      { command: "pulseaudio", args: ["--start"] },
+      { command: "pactl", args: ["load-module", "module-null-sink", "sink_name=teams_capture", "sink_properties=device.description=minutesbot_teams_capture"] },
+      {
+        command: "ffmpeg",
+        args: [
+          "-y",
+          "-f",
+          "pulse",
+          "-i",
+          "teams_capture.monitor",
+          "-t",
+          "3",
+          "-ac",
+          "1",
+          "-ar",
+          "16000",
+          "-acodec",
+          "libmp3lame",
+          "/tmp/minutesbot-recording/recording.mp3"
+        ]
+      },
+      { command: "pactl", args: ["unload-module", "0"] }
+    ]);
+    expect(result).toEqual(new Uint8Array([7, 8, 9]));
+  });
+
   it("fills the guest display name from Teams pre-join input selectors when accessibility locators miss it", async () => {
     const rawNameInput = visibleLocator();
     const page = fakePage({

@@ -48,8 +48,6 @@ const REQUIRED_ENV_KEYS = [
   "BOT_RECORDING_BUCKET_NAME",
   "DEFAULT_RECORDER_EMAIL",
   "DEFAULT_SENDER_EMAIL",
-  "TEAMS_RECORDER_EMAIL",
-  "TEAMS_RECORDER_PASSWORD",
   "OPENROUTER_API_KEY",
   "SESSION_SECRET"
 ] as const;
@@ -175,7 +173,7 @@ export function validateOneshotEnv(env: Record<string, string | undefined>, envi
   assertUrlHostname("API_BASE_URL", env.API_BASE_URL ?? "", EXPECTED_API_BASE_DOMAIN);
   assertUrlHostname("BOT_WEBHOOK_BASE_URL", env.BOT_WEBHOOK_BASE_URL ?? "", EXPECTED_BOT_WEBHOOK_DOMAIN);
   assertUrlHostname("BOT_API_BASE_URL", env.BOT_API_BASE_URL ?? "", EXPECTED_BOT_API_DOMAIN);
-  for (const key of ["DEFAULT_RECORDER_EMAIL", "DEFAULT_SENDER_EMAIL", "TEAMS_RECORDER_EMAIL"] as const) {
+  for (const key of ["DEFAULT_RECORDER_EMAIL", "DEFAULT_SENDER_EMAIL"] as const) {
     if (!(env[key] ?? "").includes("@")) throw new Error(`${key} must be an email address.`);
   }
 }
@@ -246,7 +244,6 @@ export function buildBotWranglerConfig(env: OneshotEnv, environment: CloudflareE
       BOT_RUNTIME_VERSION: env.BOT_RUNTIME_VERSION,
       BOT_API_BASE_URL: env.BOT_API_BASE_URL,
       BOT_RECORDING_BUCKET_NAME: env.BOT_RECORDING_BUCKET_NAME,
-      TEAMS_RECORDER_EMAIL: env.TEAMS_RECORDER_EMAIL,
       BOT_WEBHOOK_BASE_URL: env.BOT_WEBHOOK_BASE_URL
     },
     r2_buckets: [{ binding: "ARTIFACTS", bucket_name: env.BOT_RECORDING_BUCKET_NAME }],
@@ -310,8 +307,7 @@ async function putSecrets(options: {
 
 function botContainerSecrets(env: OneshotEnv): Record<string, string> {
   return {
-    BOT_INTERNAL_TOKEN: env.BOT_INTERNAL_TOKEN,
-    TEAMS_RECORDER_PASSWORD: env.TEAMS_RECORDER_PASSWORD
+    BOT_INTERNAL_TOKEN: env.BOT_INTERNAL_TOKEN
   };
 }
 

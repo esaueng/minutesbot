@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { getLatestSummary, getMeeting, listArtifacts, listEmailDeliveries, listMeetingAttendees, listMeetings, listTranscriptSegments, listWebhookEvents, updateMeetingStatus } from "@minutesbot/db";
 import { AppError } from "@minutesbot/shared";
 import type { Env } from "../env";
-import { deleteMeetingArtifacts } from "../services/artifactService";
+import { deleteMeetingArtifacts, deleteMeetingHistory } from "../services/artifactService";
 import { eligibleRecipientCount } from "../services/meetingService";
 
 export const meetingsRoute = new Hono<{ Bindings: Env }>()
@@ -51,6 +51,12 @@ export const meetingsRoute = new Hono<{ Bindings: Env }>()
   .post("/:id/delete-attendee-data", async (c) => {
     await c.env.SUMMARY_QUEUE.send({ type: "delete_attendee_data", meetingId: c.req.param("id") });
     return c.json({ ok: true });
+  })
+  .delete("/:id", async (c) => {
+    const id = c.req.param("id");
+    const meeting = await getMeeting(c.env.DB, id);
+    if (!meeting) throw new AppError("NOT_FOUND", "Meeting not found", 404);
+    return c.json({ ok: true, ...(await deleteMeetingHistory(c.env, id)) });
   })
   .delete("/:id/artifacts", async (c) => c.json({ ok: true, deleted: await deleteMeetingArtifacts(c.env, c.req.param("id")) }));
 

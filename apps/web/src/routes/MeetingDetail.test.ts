@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { normalizeSummaryForDisplay, summarizeArtifacts } from "./MeetingDetail";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { BotStatePanel } from "../components/BotStatePanel";
 import { getRecapEmailDeliveryStatus, RecipientEligibilityTable } from "../components/RecipientEligibilityTable";
 
 describe("meeting artifact summaries", () => {
@@ -174,5 +175,27 @@ describe("meeting detail recap display", () => {
     expect(summary?.meetingTypeLabel).toBe("General");
     expect(summary?.legacySections[0]).toEqual({ title: "Summary", items: ["Discussed launch."] });
     expect(summary?.legacySections[1]).toEqual({ title: "Action items", items: ["Alex - Ship release notes. - TBD"] });
+  });
+});
+
+describe("meeting bot state display", () => {
+  it("shows the latest bot error and last event timestamp beside the bot state", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(BotStatePanel, {
+        meeting: {
+          attendee_bot_id: "bot_1",
+          attendee_bot_state: "joining",
+          attendee_transcription_state: "pending",
+          attendee_recording_state: "pending",
+          attendee_last_event_at: "2026-05-10T07:34:28.951Z",
+          latest_error: "Teams pre-join screen did not show a Join now button"
+        }
+      })
+    );
+
+    expect(html).toContain("Last event");
+    expect(html).toContain("May 10, 2026");
+    expect(html).toContain("Latest error");
+    expect(html).toContain("Teams pre-join screen did not show a Join now button");
   });
 });

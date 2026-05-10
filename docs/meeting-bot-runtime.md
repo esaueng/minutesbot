@@ -4,19 +4,18 @@ minutesbot includes its own first-party Teams meeting bot runtime. It does not c
 
 The runtime is split into:
 
-- `apps/bot-runtime`: Node/TypeScript Hono service that exposes the bot API, drives the browser/ffmpeg recording adapter, uploads recordings, and emits managed webhooks.
+- `apps/bot-runtime`: Node/TypeScript Hono service that exposes the bot API, drives the guest Teams browser flow, captures browser audio through PulseAudio/ffmpeg, uploads recordings, and emits managed webhooks.
 - `deploy/bot-container`: Cloudflare Container router that runs the bot runtime and stores uploaded recordings in the minutesbot R2 bucket.
 - `packages/bot-client`: Fetch client used by Workers and tests.
 
 ## Required Secrets
 
 ```bash
-wrangler secret put TEAMS_RECORDER_PASSWORD --config deploy/bot-container/wrangler.jsonc
 wrangler secret put AI_API_KEY
 wrangler secret put SESSION_SECRET
 ```
 
-Set `TEAMS_RECORDER_EMAIL` as a non-secret var in the bot container config. The runtime prefers that service account and can fall back to guest join when allowed by tenant policy. `pnpm deploy:oneshot` generates and pushes the internal meeting bot token automatically; admins do not configure bot API or webhook keys.
+The runtime joins Teams as a guest using the configured bot display name. `pnpm deploy:oneshot` generates and pushes the internal meeting bot token automatically; admins do not configure bot API or webhook keys.
 
 ## Runtime Contract
 
@@ -35,7 +34,7 @@ The Worker creates a bot with:
 }
 ```
 
-After recording, the bot runtime uploads `recordings/<meetingId>/recording.mp3` to R2 and emits `post_processing_completed`. The existing transcript workflow then reads the R2 MP3, transcribes it with the configured OpenRouter/Whisper provider, stores transcript artifacts, and queues the recap.
+After Teams admits the browser to the lobby or meeting, the bot runtime records browser audio from a PulseAudio monitor, uploads `recordings/<meetingId>/recording.mp3` to R2, and emits `post_processing_completed`. The existing transcript workflow then reads the R2 MP3, transcribes it with the configured OpenRouter/Whisper provider, stores transcript artifacts, and queues the recap.
 
 ## Health
 
@@ -45,4 +44,4 @@ Use:
 https://meeting-api.minutes.bot/_ops/health
 ```
 
-The health response reports missing runtime pieces such as `TEAMS_RECORDER_PASSWORD`, `chromium`, or `ffmpeg`.
+The health response reports missing runtime pieces such as `chromium`, `ffmpeg`, or `pulseaudio`.

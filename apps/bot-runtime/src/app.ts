@@ -7,12 +7,10 @@ type RuntimeEnv = {
   BOT_RECORDING_BUCKET_NAME?: string;
   BOT_RUNTIME_VERSION?: string;
   BOT_CONTAINER_INSTANCE_ID?: string;
-  TEAMS_RECORDER_EMAIL?: string;
-  TEAMS_RECORDER_PASSWORD?: string;
   BOT_ALLOW_GUEST_JOIN?: string;
 };
 
-export type BotState = "queued" | "joining" | "waiting_room" | "joined" | "recording" | "post_processing" | "ended" | "failed";
+export type BotState = "queued" | "prejoin" | "joining" | "waiting_room" | "joined" | "recording" | "post_processing" | "ended" | "failed";
 
 type BotRecord = {
   id: string;
@@ -28,20 +26,19 @@ type BotRecord = {
 type RecordingResult = {
   bytes: Uint8Array;
   contentType: string;
-  joinMode: "service_account" | "guest";
+  joinMode: "guest";
 };
 
 export type BotRuntimeDeps = {
   env: RuntimeEnv;
-  checkBinary: (name: "chromium" | "ffmpeg") => Promise<boolean>;
+  checkBinary: (name: "chromium" | "ffmpeg" | "pulseaudio") => Promise<boolean>;
   recorder: {
     record(input: {
       meetingUrl: string;
       botName: string;
       botImage?: { type: "image/png" | "image/jpeg"; data: string };
-      serviceAccount?: { email: string; password: string };
       allowGuestJoin: boolean;
-      onState?: (state: Extract<BotState, "waiting_room" | "joined">) => Promise<void>;
+      onState?: (state: Extract<BotState, "prejoin" | "waiting_room" | "joined">) => Promise<void>;
     }): Promise<RecordingResult>;
   };
   recordingStore: {
@@ -78,7 +75,7 @@ export function createBotRuntimeApp(deps: BotRuntimeDeps): Hono {
         ok: missing.length === 0,
         runtime: "meeting-bot-container",
         missing,
-        auth: deps.env.TEAMS_RECORDER_EMAIL && deps.env.TEAMS_RECORDER_PASSWORD ? "service_account" : "guest",
+        auth: "guest",
         version: runtimeVersion(deps.env),
         diagnosticVersion: runtimeVersion(deps.env),
         containerInstanceId: deps.env.BOT_CONTAINER_INSTANCE_ID?.trim() || "unknown"
@@ -137,10 +134,6 @@ async function runBotLifecycle(deps: BotRuntimeDeps, bot: BotRecord, input: z.in
       meetingUrl: input.meeting_url,
       botName: input.bot_name,
       botImage: input.bot_image,
-      serviceAccount:
-        deps.env.TEAMS_RECORDER_EMAIL && deps.env.TEAMS_RECORDER_PASSWORD
-          ? { email: deps.env.TEAMS_RECORDER_EMAIL, password: deps.env.TEAMS_RECORDER_PASSWORD }
-          : undefined,
       allowGuestJoin: deps.env.BOT_ALLOW_GUEST_JOIN !== "false",
       onState: async (state) => {
         await updateBot(deps, bot, input, { state });
@@ -197,9 +190,10 @@ async function emitStateWebhook(deps: BotRuntimeDeps, input: z.infer<typeof crea
 async function missingRuntimeSettings(deps: BotRuntimeDeps): Promise<string[]> {
   const missing: string[] = [];
   if (!deps.env.BOT_RECORDING_BUCKET_NAME) missing.push("BOT_RECORDING_BUCKET_NAME");
-  if (!deps.env.TEAMS_RECORDER_PASSWORD && deps.env.BOT_ALLOW_GUEST_JOIN === "false") missing.push("TEAMS_RECORDER_PASSWORD");
+  if (deps.env.BOT_ALLOW_GUEST_JOIN === "false") missing.push("BOT_ALLOW_GUEST_JOIN");
   if (!(await deps.checkBinary("chromium"))) missing.push("chromium");
   if (!(await deps.checkBinary("ffmpeg"))) missing.push("ffmpeg");
+  if (!(await deps.checkBinary("pulseaudio"))) missing.push("pulseaudio");
   return missing;
 }
 

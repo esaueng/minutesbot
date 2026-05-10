@@ -316,7 +316,7 @@ describe("createMeetingBot failure handling", () => {
       "fetch",
       vi.fn(async (url: string | URL | Request) => {
         requests.push(String(url));
-        return new Response(JSON.stringify({ ok: false, runtime: "meeting-bot-container", missing: ["TEAMS_RECORDER_PASSWORD", "ffmpeg"] }), {
+        return new Response(JSON.stringify({ ok: false, runtime: "meeting-bot-container", missing: ["ffmpeg", "pulseaudio"] }), {
           status: 503,
           headers: { "content-type": "application/json" }
         });
@@ -330,7 +330,7 @@ describe("createMeetingBot failure handling", () => {
     expect(requests).toEqual(["https://meeting-bot.example.com/_ops/health"]);
     expect(db.statusUpdates.at(-1)).toEqual({
       status: "FAILED",
-      latestError: "BOT_UNHEALTHY: Meeting bot health check failed: missing TEAMS_RECORDER_PASSWORD, ffmpeg"
+      latestError: "BOT_UNHEALTHY: Meeting bot health check failed: missing ffmpeg, pulseaudio"
     });
     expect(db.auditLogs.at(-1)).toMatchObject({
       eventType: "bot.fatal_error",

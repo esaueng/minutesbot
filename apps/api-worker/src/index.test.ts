@@ -133,6 +133,57 @@ class RetriedMeetingDetailD1 {
   }
 }
 
+class DeleteMeetingD1 {
+  deletedTables: string[] = [];
+
+  prepare(sql: string) {
+    const db = this;
+    return {
+      values: [] as unknown[],
+      bind(...values: unknown[]) {
+        this.values = values;
+        return this;
+      },
+      async first() {
+        if (sql.includes("FROM meetings WHERE id")) {
+          return {
+            id: this.values[0],
+            subject: "Old meeting",
+            status: "FAILED",
+            created_at: "2026-05-10T03:26:00.000Z",
+            updated_at: "2026-05-10T03:26:00.000Z"
+          };
+        }
+        return null;
+      },
+      async run() {
+        const match = sql.match(/^DELETE FROM (\w+)/);
+        if (match?.[1]) db.deletedTables.push(match[1]);
+        return { success: true };
+      },
+      async all() {
+        if (sql.includes("FROM artifacts")) {
+          return {
+            results: [
+              { id: "art_1", r2_key: "recordings/mtg_1/recording.mp3", deleted_at: null },
+              { id: "art_2", r2_key: "transcripts/mtg_1/old.txt", deleted_at: "2026-05-10T03:30:00.000Z" }
+            ]
+          };
+        }
+        if (sql.includes("FROM summaries")) {
+          return {
+            results: [
+              { r2_key: "summaries/mtg_1/summary.json" },
+              { r2_key: "recordings/mtg_1/recording.mp3" }
+            ]
+          };
+        }
+        return { results: [] };
+      }
+    };
+  }
+}
+
 describe("api worker", () => {
   it("returns health", async () => {
     const response = await app.request("/api/health");
@@ -234,6 +285,40 @@ describe("api worker", () => {
 
     expect(response.status).toBe(200);
     expect(send).toHaveBeenCalledWith({ type: "fetch_transcript", meetingId: "mtg_1" });
+  });
+
+  it("removes a meeting from history and deletes associated R2 objects", async () => {
+    const db = new DeleteMeetingD1();
+    const deletedObjects: string[] = [];
+    const response = await app.request(
+      "/api/meetings/mtg_1",
+      { method: "DELETE", headers: { authorization: "Bearer test-secret" } },
+      {
+        DB: db as unknown as D1Database,
+        ARTIFACTS: {
+          delete: vi.fn(async (key: string) => {
+            deletedObjects.push(key);
+          })
+        } as unknown as R2Bucket,
+        INVITE_QUEUE: { send: vi.fn() },
+        SUMMARY_QUEUE: { send: vi.fn() },
+        EMAIL_QUEUE: { send: vi.fn() },
+        SESSION_SECRET: "test-secret"
+      }
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true, objectsDeleted: 2 });
+    expect(deletedObjects).toEqual(["recordings/mtg_1/recording.mp3", "summaries/mtg_1/summary.json"]);
+    expect(db.deletedTables).toEqual([
+      "attendees",
+      "attendee_webhook_events",
+      "transcript_segments",
+      "artifacts",
+      "email_deliveries",
+      "summaries",
+      "meetings"
+    ]);
   });
 
   it("derives meeting detail latest_error from fatal bot webhook payloads", async () => {

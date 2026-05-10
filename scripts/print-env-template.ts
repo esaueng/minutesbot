@@ -10,8 +10,4 @@ DEFAULT_RECORDER_EMAIL=notetaker@minutes.bot
 DEFAULT_SENDER_EMAIL=notetaker@minutes.bot
 ENVIRONMENT=production
 OPENROUTER_API_KEY=
-SESSION_SECRET=
-
-# Meeting bot container
-TEAMS_RECORDER_EMAIL=notetaker@company.com
-TEAMS_RECORDER_PASSWORD=`);
+SESSION_SECRET=`);

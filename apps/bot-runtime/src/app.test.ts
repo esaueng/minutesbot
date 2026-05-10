@@ -5,7 +5,7 @@ describe("bot runtime app", () => {
   it("reports missing runtime dependencies clearly", async () => {
     const app = createBotRuntimeApp({
       env: { BOT_RECORDING_BUCKET_NAME: "minutesbot-artifacts", BOT_ALLOW_GUEST_JOIN: "false" },
-      checkBinary: async (name) => name !== "ffmpeg",
+      checkBinary: async (name) => name !== "ffmpeg" && name !== "pulseaudio",
       recorder: fakeRecorder(),
       recordingStore: fakeRecordingStore(),
       sendWebhook: vi.fn()
@@ -17,7 +17,7 @@ describe("bot runtime app", () => {
     expect(await response.json()).toMatchObject({
       ok: false,
       runtime: "meeting-bot-container",
-      missing: ["TEAMS_RECORDER_PASSWORD", "ffmpeg"]
+      missing: ["BOT_ALLOW_GUEST_JOIN", "ffmpeg", "pulseaudio"]
     });
   });
 
@@ -48,6 +48,44 @@ describe("bot runtime app", () => {
     });
   });
 
+  it("uses guest mode even when legacy recorder credentials are present", async () => {
+    let recorderInput: Parameters<BotRuntimeDeps["recorder"]["record"]>[0] | null = null;
+    const app = createBotRuntimeApp({
+      env: {
+        BOT_INTERNAL_TOKEN: "managed-token",
+        BOT_RECORDING_BUCKET_NAME: "minutesbot-artifacts",
+        TEAMS_RECORDER_EMAIL: "notetaker@company.com",
+        TEAMS_RECORDER_PASSWORD: "password"
+      } as unknown as BotRuntimeDeps["env"],
+      checkBinary: async () => true,
+      recorder: {
+        record: async (input) => {
+          recorderInput = input;
+          await input.onState?.("joined");
+          return { bytes: new Uint8Array([1]), contentType: "audio/mpeg", joinMode: "guest" };
+        }
+      },
+      recordingStore: fakeRecordingStore(),
+      sendWebhook: vi.fn(),
+      randomUUID: () => "bot_guest"
+    });
+
+    const response = await app.request("/api/v1/bots", {
+      method: "POST",
+      headers: { authorization: "Bearer managed-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        meeting_url: "https://teams.microsoft.com/l/meetup-join/abc",
+        bot_name: "minutesbot",
+        external_media_storage_settings: { bucket_name: "minutesbot-artifacts" }
+      })
+    });
+
+    expect(response.status).toBe(201);
+    await vi.waitFor(() => expect(recorderInput).not.toBeNull());
+    expect(recorderInput).toMatchObject({ allowGuestJoin: true });
+    expect(recorderInput).not.toHaveProperty("serviceAccount");
+  });
+
   it("creates a bot, records to the supplied R2 key, and emits a managed completion webhook", async () => {
     const stored: Array<{ bucketName: string; key: string; bytes: Uint8Array; contentType: string }> = [];
     const webhooks: Array<{ url: string; body: string; internalToken?: string }> = [];
@@ -57,7 +95,7 @@ describe("bot runtime app", () => {
         BOT_RECORDING_BUCKET_NAME: "minutesbot-artifacts",
         TEAMS_RECORDER_EMAIL: "notetaker@company.com",
         TEAMS_RECORDER_PASSWORD: "password"
-      },
+      } as unknown as BotRuntimeDeps["env"],
       checkBinary: async () => true,
       recorder: fakeRecorder(new Uint8Array([1, 2, 3]), "joined"),
       recordingStore: {
@@ -110,7 +148,7 @@ function fakeRecorder(bytes = new Uint8Array([9]), state?: "waiting_room" | "joi
   return {
     record: async (input) => {
       if (state) await input.onState?.(state);
-      return { bytes, contentType: "audio/mpeg", joinMode: "service_account" };
+      return { bytes, contentType: "audio/mpeg", joinMode: "guest" };
     }
   };
 }

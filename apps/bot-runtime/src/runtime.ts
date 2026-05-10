@@ -6,8 +6,15 @@ import type { BotRuntimeDeps } from "./app";
 
 type RuntimeProcessEnv = Record<string, string | undefined>;
 type RuntimeRecorderInput = Parameters<BotRuntimeDeps["recorder"]["record"]>[0];
-type JoinMode = "guest" | "service_account";
+type JoinMode = "guest";
 type JoinedState = "waiting_room" | "joined";
+
+type AudioIo = {
+  mkdtemp: (prefix: string) => Promise<string>;
+  readFile: (path: string) => Promise<Uint8Array>;
+  rm: (path: string, options: { recursive: true; force: true }) => Promise<void>;
+  runCommand: (command: string, args: string[]) => Promise<string | void>;
+};
 
 const PREJOIN_MAX_ATTEMPTS = 60;
 const MEETING_NOT_STARTED_MAX_ATTEMPTS = 2 * 60 * 60;
@@ -20,6 +27,7 @@ export function createDefaultDeps(env: RuntimeProcessEnv): BotRuntimeDeps {
     env,
     checkBinary: async (name) => {
       if (name === "ffmpeg") return binaryAvailable("ffmpeg");
+      if (name === "pulseaudio") return binaryAvailable("pulseaudio") && binaryAvailable("pactl");
       if (env.CHROMIUM_EXECUTABLE_PATH) return binaryAvailable(env.CHROMIUM_EXECUTABLE_PATH);
       return playwrightChromiumAvailable();
     },
@@ -44,33 +52,35 @@ function createBrowserRecorder(env: RuntimeProcessEnv): BotRuntimeDeps["recorder
         return {
           bytes: new Uint8Array(await readFile(fixturePath)),
           contentType: contentTypeForFormat(env.BOT_RECORDING_FORMAT || "mp3"),
-          joinMode: input.serviceAccount ? "service_account" : "guest"
+          joinMode: "guest"
         };
       }
 
-      const browser = await loadPlaywrightChromium();
+      const audio = await startPulseAudioSink(env);
       const userDataDir = env.BOT_BROWSER_PROFILE_DIR || (await mkdtemp(join(tmpdir(), "minutesbot-profile-")));
-      const context = await browser.launchPersistentContext(userDataDir, {
-        headless: env.BOT_HEADLESS !== "false",
-        executablePath: env.CHROMIUM_EXECUTABLE_PATH,
-        args: ["--use-fake-ui-for-media-stream", "--no-sandbox", "--disable-dev-shm-usage"]
-      });
-      const page = await context.newPage();
+      let context: any;
       try {
+        const browser = await loadPlaywrightChromium();
+        context = await browser.launchPersistentContext(userDataDir, {
+          headless: env.BOT_HEADLESS !== "false",
+          executablePath: env.CHROMIUM_EXECUTABLE_PATH,
+          env: { ...process.env, PULSE_SINK: audio.sinkName },
+          args: ["--use-fake-ui-for-media-stream", "--no-sandbox", "--disable-dev-shm-usage"]
+        });
+        const page = await context.newPage();
         await page.goto(input.meetingUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs(env.BOT_JOIN_TIMEOUT_MS, 90_000) });
-        const joinedState = input.serviceAccount
-          ? await joinWithServiceAccount(page, input)
-          : await joinAsGuest(page, input);
+        const joinedState = await joinAsGuest(page, input);
         await input.onState?.(joinedState);
-        const bytes = await recordSilentAudio(env);
+        const bytes = await captureBrowserAudio(env, defaultAudioIo, audio.sinkName);
         return {
           bytes,
           contentType: contentTypeForFormat(env.BOT_RECORDING_FORMAT || "mp3"),
-          joinMode: input.serviceAccount ? "service_account" : "guest"
+          joinMode: "guest"
         };
       } finally {
-        await context.close().catch(() => undefined);
+        if (context) await context.close().catch(() => undefined);
         if (!env.BOT_BROWSER_PROFILE_DIR) await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
+        await audio.cleanup().catch(() => undefined);
       }
     }
   };
@@ -104,19 +114,9 @@ async function loadPlaywrightChromium(): Promise<any> {
   return playwright.chromium;
 }
 
-async function joinWithServiceAccount(page: any, input: RuntimeRecorderInput): Promise<"waiting_room" | "joined"> {
-  if (!input.serviceAccount) throw new Error("Service account credentials are missing");
-  await clickTeamsWebEntry(page);
-  await fillIfVisible(page.getByRole("textbox", { name: /email|phone|skype/i }), input.serviceAccount.email, 15_000);
-  await clickIfVisible(page.getByRole("button", { name: /next/i }), 10_000);
-  await fillIfVisible(page.getByRole("textbox", { name: /password/i }), input.serviceAccount.password, 15_000);
-  await clickIfVisible(page.getByRole("button", { name: /sign in/i }), 10_000);
-  await clickIfVisible(page.getByRole("button", { name: /yes|stay signed in/i }), 5_000);
-  return joinFromPrejoin(page, input.botName, "service_account");
-}
-
 async function joinAsGuest(page: any, input: RuntimeRecorderInput): Promise<"waiting_room" | "joined"> {
-  if (!input.allowGuestJoin) throw new Error("Guest join is disabled and no service account credentials are configured");
+  if (!input.allowGuestJoin) throw new Error("Guest join is disabled for the meeting bot runtime");
+  await input.onState?.("prejoin");
   return joinFromPrejoin(page, input.botName, "guest");
 }
 
@@ -471,23 +471,79 @@ async function fillIfVisible(locator: any, value: string, visibleTimeout: number
   return true;
 }
 
-async function recordSilentAudio(env: RuntimeProcessEnv): Promise<Uint8Array> {
-  const dir = await mkdtemp(join(tmpdir(), "minutesbot-recording-"));
-  const file = join(dir, "recording.mp3");
-  const seconds = Math.max(1, Number(env.BOT_RECORDING_SECONDS ?? "30"));
-  await runFfmpeg(["-y", "-f", "lavfi", "-i", "anullsrc=channel_layout=mono:sample_rate=16000", "-t", String(seconds), "-q:a", "9", "-acodec", "libmp3lame", file]);
-  const bytes = new Uint8Array(await readFile(file));
-  await rm(dir, { recursive: true, force: true });
-  return bytes;
+const defaultAudioIo: AudioIo = {
+  mkdtemp: (prefix) => mkdtemp(prefix),
+  readFile: async (path) => new Uint8Array(await readFile(path)),
+  rm,
+  runCommand: runProcess
+};
+
+async function recordBrowserAudio(env: RuntimeProcessEnv, io: AudioIo = defaultAudioIo): Promise<Uint8Array> {
+  const audio = await startPulseAudioSink(env, io);
+  try {
+    return await captureBrowserAudio(env, io, audio.sinkName);
+  } finally {
+    await audio.cleanup().catch(() => undefined);
+  }
 }
 
-function runFfmpeg(args: string[]): Promise<void> {
+async function startPulseAudioSink(
+  env: RuntimeProcessEnv,
+  io: AudioIo = defaultAudioIo
+): Promise<{ sinkName: string; cleanup: () => Promise<void> }> {
+  const sinkName = env.BOT_AUDIO_SINK_NAME?.trim() || "teams_capture";
+  await io.runCommand("pulseaudio", ["--start"]);
+  const moduleOutput = await io.runCommand("pactl", [
+    "load-module",
+    "module-null-sink",
+    `sink_name=${sinkName}`,
+    "sink_properties=device.description=minutesbot_teams_capture"
+  ]);
+  const moduleId = typeof moduleOutput === "string" && moduleOutput.trim() ? moduleOutput.trim() : "0";
+  return {
+    sinkName,
+    cleanup: () => io.runCommand("pactl", ["unload-module", moduleId]).then(() => undefined)
+  };
+}
+
+async function captureBrowserAudio(env: RuntimeProcessEnv, io: AudioIo, sinkName: string): Promise<Uint8Array> {
+  const dir = await io.mkdtemp(join(tmpdir(), "minutesbot-recording-"));
+  const file = join(dir, "recording.mp3");
+  const seconds = Math.max(1, Number(env.BOT_RECORDING_SECONDS ?? env.BOT_RECORDING_MAX_SECONDS ?? "3600"));
+  try {
+    await io.runCommand("ffmpeg", [
+      "-y",
+      "-f",
+      "pulse",
+      "-i",
+      `${sinkName}.monitor`,
+      "-t",
+      String(seconds),
+      "-ac",
+      "1",
+      "-ar",
+      "16000",
+      "-acodec",
+      "libmp3lame",
+      file
+    ]);
+    return await io.readFile(file);
+  } finally {
+    await io.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+function runProcess(command: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn("ffmpeg", args, { stdio: "ignore" });
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    child.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
+    child.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
     child.on("error", reject);
     child.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`ffmpeg exited with ${code}`));
+      if (code === 0) resolve(Buffer.concat(stdout).toString("utf8"));
+      else reject(new Error(`${command} exited with ${code}: ${Buffer.concat(stderr).toString("utf8").slice(-500)}`));
     });
   });
 }
@@ -518,5 +574,6 @@ function timeoutMs(value: string | undefined, fallback: number): number {
 
 export const __runtimeTest = {
   fillGuestName,
-  joinAsGuest
+  joinAsGuest,
+  recordBrowserAudio
 };

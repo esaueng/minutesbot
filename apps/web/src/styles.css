@@ -1000,6 +1000,36 @@ th, td {
 th { background: #182235; color: #cbd5e1; font-weight: 650; }
 tr:hover td { background: rgba(45, 212, 191, .04); }
 
+.clickableRow {
+  cursor: pointer;
+}
+
+.clickableRow:focus-visible td {
+  background: rgba(45, 212, 191, .08);
+  box-shadow: inset 0 1px 0 rgba(45, 212, 191, .28), inset 0 -1px 0 rgba(45, 212, 191, .28);
+}
+
+.actionsCell {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.tableActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dangerButton {
+  color: #fecaca;
+}
+
+.dangerButton:hover:not(:disabled) {
+  border-color: rgba(248, 113, 113, .42);
+  background: rgba(127, 29, 29, .2);
+  color: #fee2e2;
+}
+
 .timeCell {
   min-width: 210px;
   white-space: nowrap;

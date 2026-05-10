@@ -162,7 +162,7 @@ function mapBotStateToMeetingStatus(state?: string, eventType?: string): Meeting
   if (eventType === "fatal_error") return "BOT_FATAL_ERROR";
   if (!state) return undefined;
   if (state === "failed" || state.includes("fatal") || state.includes("error")) return "BOT_FATAL_ERROR";
-  if (state === "joining") return "BOT_JOINING";
+  if (state === "prejoin" || state === "joining") return "BOT_JOINING";
   if (state.includes("waiting")) return "BOT_WAITING_ROOM";
   if (state === "joined") return "BOT_JOINED";
   if (state.includes("record")) return "BOT_RECORDING";

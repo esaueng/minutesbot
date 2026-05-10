@@ -12,8 +12,6 @@ type BotContainerEnv = {
   BOT_CONTAINER_SLEEP_AFTER?: string;
   BOT_CONTAINER_INSTANCE_ID?: string;
   BOT_WEBHOOK_BASE_URL?: string;
-  TEAMS_RECORDER_EMAIL?: string;
-  TEAMS_RECORDER_PASSWORD?: string;
   BOT_ALLOW_GUEST_JOIN?: string;
 };
 
@@ -61,8 +59,6 @@ function stringEnv(env: BotContainerEnv): Record<string, string> {
       "BOT_RUNTIME_VERSION",
       "BOT_CONTAINER_INSTANCE_ID",
       "BOT_WEBHOOK_BASE_URL",
-      "TEAMS_RECORDER_EMAIL",
-      "TEAMS_RECORDER_PASSWORD",
       "BOT_ALLOW_GUEST_JOIN"
     ]
       .map((key) => [key, env[key as keyof BotContainerEnv]])
