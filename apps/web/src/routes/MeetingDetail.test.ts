@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeSummaryForDisplay, summarizeArtifacts } from "./MeetingDetail";
+import { normalizeBotLogs, normalizeSummaryForDisplay, summarizeArtifacts } from "./MeetingDetail";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BotStatePanel } from "../components/BotStatePanel";
@@ -54,6 +54,44 @@ describe("meeting artifact summaries", () => {
         latestCreatedAt: "2026-05-06T03:52:31.691Z",
         count: 2,
         deleted: false
+      }
+    ]);
+  });
+});
+
+describe("meeting bot log display", () => {
+  it("normalizes meeting bot log webhook events into readable rows", () => {
+    expect(
+      normalizeBotLogs([
+        {
+          id: "wh_log_1",
+          trigger: "bot_logs.update",
+          created_at: "2026-05-10T22:16:18.339Z",
+          payload: JSON.stringify({
+            data: {
+              event_type: "runtime_log",
+              level: "info",
+              message: "Opening Teams meeting URL",
+              state: "joining",
+              details: { stage: "browser" },
+              timestamp: "2026-05-10T22:16:18.000Z"
+            }
+          })
+        },
+        {
+          id: "wh_state_1",
+          trigger: "bot.state_change",
+          payload: JSON.stringify({ data: { new_state: "joining" } })
+        }
+      ])
+    ).toEqual([
+      {
+        id: "wh_log_1",
+        time: "2026-05-10T22:16:18.000Z",
+        level: "info",
+        state: "joining",
+        message: "Opening Teams meeting URL",
+        detail: "stage=browser"
       }
     ]);
   });

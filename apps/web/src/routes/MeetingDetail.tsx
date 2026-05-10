@@ -54,6 +54,7 @@ export function MeetingDetail({ id }: { id: string }) {
       <SummarySection summaryRow={data.summary as Record<string, unknown> | null} />
       <TableSection title="Transcript segments" rows={(data.transcriptSegments as Array<Record<string, unknown>>) ?? []} />
       <ArtifactSection rows={(data.artifacts as Array<Record<string, unknown>>) ?? []} />
+      <BotLogSection rows={(data.webhookEvents as Array<Record<string, unknown>>) ?? []} />
       <TableSection title="Webhook events" rows={(data.webhookEvents as Array<Record<string, unknown>>) ?? []} />
       <TableSection title="Email deliveries" rows={(data.emailDeliveries as Array<Record<string, unknown>>) ?? []} />
     </div>
@@ -225,6 +226,84 @@ type ArtifactSummary = {
   count: number;
   deleted: boolean;
 };
+
+type BotLogRow = {
+  id: string;
+  time: string;
+  level: string;
+  state: string;
+  message: string;
+  detail: string;
+};
+
+function BotLogSection({ rows }: { rows: Array<Record<string, unknown>> }) {
+  const logs = normalizeBotLogs(rows);
+  return (
+    <section>
+      <h2>Bot logs</h2>
+      <div className="scroll">
+        <table className="compactTable">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Level</th>
+              <th>State</th>
+              <th>Message</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {logs.map((log) => (
+              <tr key={log.id}>
+                <td>{formatDate(log.time)}</td>
+                <td><StatusBadge value={log.level} /></td>
+                <td>{log.state}</td>
+                <td>{log.message}</td>
+                <td>{log.detail}</td>
+              </tr>
+            ))}
+            {logs.length === 0 && <tr><td colSpan={5}>No records</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+export function normalizeBotLogs(rows: Array<Record<string, unknown>>): BotLogRow[] {
+  return rows
+    .filter((row) => String(row.trigger ?? "") === "bot_logs.update")
+    .map((row, index) => {
+      const payload = typeof row.payload === "string" ? parseJsonObject(row.payload) : null;
+      const data = payload && typeof payload.data === "object" && payload.data ? payload.data as Record<string, unknown> : {};
+      return {
+        id: String(row.id ?? index),
+        time: String(data.timestamp ?? row.processed_at ?? row.created_at ?? ""),
+        level: String(data.level ?? "info"),
+        state: String(data.state ?? ""),
+        message: String(data.message ?? ""),
+        detail: formatLogDetails(data.details)
+      };
+    })
+    .filter((log) => log.message)
+    .sort((a, b) => b.time.localeCompare(a.time));
+}
+
+function formatLogDetails(details: unknown): string {
+  if (!details || typeof details !== "object") return "";
+  return Object.entries(details as Record<string, unknown>)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(", ");
+}
+
+function parseJsonObject(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
 
 function ArtifactSection({ rows }: { rows: Array<Record<string, unknown>> }) {
   const artifacts = summarizeArtifacts(rows);

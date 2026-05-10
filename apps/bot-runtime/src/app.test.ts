@@ -222,6 +222,58 @@ describe("bot runtime app", () => {
       latest_error: "Meeting bot did not join before the 1 second timeout expired"
     });
   });
+
+  it("emits runtime log webhooks before completion", async () => {
+    const webhooks: Array<{ body: string }> = [];
+    const app = createBotRuntimeApp({
+      env: {
+        BOT_INTERNAL_TOKEN: "managed-token",
+        BOT_RECORDING_BUCKET_NAME: "minutesbot-artifacts"
+      },
+      checkBinary: async () => true,
+      recorder: {
+        record: async (input) => {
+          await input.onLog?.({ level: "info", message: "Opening Teams meeting URL", details: { stage: "browser" } });
+          await input.onState?.("joined");
+          return { bytes: new Uint8Array([1]), contentType: "audio/mpeg", joinMode: "guest" };
+        }
+      },
+      recordingStore: fakeRecordingStore(),
+      sendWebhook: async (input) => {
+        webhooks.push(input);
+      },
+      randomUUID: () => "bot_logs",
+      now: () => "2026-05-10T22:16:18.000Z"
+    });
+
+    const response = await app.request("/api/v1/bots", {
+      method: "POST",
+      headers: { authorization: "Bearer managed-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        meeting_url: "https://teams.microsoft.com/l/meetup-join/abc",
+        bot_name: "minutesbot",
+        webhooks: [{ url: "https://meeting.minutes.bot/api/webhooks/bot", triggers: ["bot.state_change", "bot_logs.update"] }],
+        external_media_storage_settings: { bucket_name: "minutesbot-artifacts" },
+        metadata: { minutesbot_meeting_id: "mtg_1" }
+      })
+    });
+
+    expect(response.status).toBe(201);
+    await vi.waitFor(() => expect(webhooks.some((webhook) => webhook.body.includes("bot_logs.update"))).toBe(true));
+    const log = JSON.parse(webhooks.find((webhook) => webhook.body.includes("bot_logs.update"))?.body ?? "{}");
+    expect(log).toMatchObject({
+      idempotency_key: "bot_logs-log-1",
+      bot_id: "bot_logs",
+      trigger: "bot_logs.update",
+      data: {
+        event_type: "runtime_log",
+        level: "info",
+        message: "Opening Teams meeting URL",
+        state: "joining",
+        details: { stage: "browser" }
+      }
+    });
+  });
 });
 
 function fakeRecorder(bytes = new Uint8Array([9]), state?: "waiting_room" | "joined"): BotRuntimeDeps["recorder"] {

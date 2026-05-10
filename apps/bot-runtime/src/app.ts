@@ -21,6 +21,13 @@ type BotRecord = {
   metadata?: Record<string, unknown>;
   created_at: string;
   latest_error?: string;
+  log_sequence: number;
+};
+
+type BotRuntimeLog = {
+  level: "debug" | "info" | "warning" | "error";
+  message: string;
+  details?: Record<string, unknown>;
 };
 
 type RecordingResult = {
@@ -40,6 +47,7 @@ export type BotRuntimeDeps = {
       allowGuestJoin: boolean;
       joinTimeoutSeconds?: number;
       onState?: (state: Extract<BotState, "prejoin" | "waiting_room" | "joined">) => Promise<void>;
+      onLog?: (log: BotRuntimeLog) => Promise<void>;
     }): Promise<RecordingResult>;
   };
   recordingStore: {
@@ -103,7 +111,8 @@ export function createBotRuntimeApp(deps: BotRuntimeDeps): Hono {
       recording_state: "pending",
       transcription_state: "pending",
       metadata: input.metadata,
-      created_at: deps.now?.() ?? new Date().toISOString()
+      created_at: deps.now?.() ?? new Date().toISOString(),
+      log_sequence: 0
     };
     bots.set(id, bot);
     const created = publicBot(bot);
@@ -140,19 +149,26 @@ async function runBotLifecycle(deps: BotRuntimeDeps, bot: BotRecord, input: z.in
       joinTimeoutSeconds: input.join_timeout_seconds,
       onState: async (state) => {
         await updateBot(deps, bot, input, { state });
+      },
+      onLog: async (log) => {
+        await emitBotLog(deps, input, bot, log);
       }
     });
+    await emitBotLog(deps, input, bot, { level: "info", message: "Teams joined; starting recording", details: { state: bot.state } });
     await updateBot(deps, bot, input, { state: "recording", recording_state: "recording" });
+    await emitBotLog(deps, input, bot, { level: "info", message: "Uploading recording to R2", details: { recordingKey: input.external_media_storage_settings?.recording_file_name ?? `recordings/${bot.id}/recording.mp3` } });
     await deps.recordingStore.putRecording({
       bucketName: input.external_media_storage_settings?.bucket_name ?? deps.env.BOT_RECORDING_BUCKET_NAME ?? "",
       key: input.external_media_storage_settings?.recording_file_name ?? `recordings/${bot.id}/recording.mp3`,
       bytes: recording.bytes,
       contentType: recording.contentType
     });
+    await emitBotLog(deps, input, bot, { level: "info", message: "Recording uploaded", details: { contentType: recording.contentType, sizeBytes: recording.bytes.byteLength } });
     await updateBot(deps, bot, input, { state: "post_processing", recording_state: "complete" });
     await updateBot(deps, bot, input, { state: "ended", recording_state: "complete", transcription_state: "complete" }, "post_processing_completed");
   } catch (error) {
     bot.latest_error = error instanceof Error ? error.message : String(error);
+    await emitBotLog(deps, input, bot, { level: "error", message: "Meeting bot lifecycle failed", details: { error: bot.latest_error } });
     await updateBot(deps, bot, input, { state: "failed", recording_state: "failed", transcription_state: "failed" }, "fatal_error");
   }
 }
@@ -187,6 +203,30 @@ async function emitStateWebhook(deps: BotRuntimeDeps, input: z.infer<typeof crea
     input.webhooks
       .filter((webhook) => webhook.triggers.includes("bot.state_change"))
       .map((webhook) => deps.sendWebhook({ url: webhook.url, body, internalToken: deps.env.BOT_INTERNAL_TOKEN }))
+  );
+}
+
+async function emitBotLog(deps: BotRuntimeDeps, input: z.infer<typeof createBotSchema>, bot: BotRecord, log: BotRuntimeLog): Promise<void> {
+  bot.log_sequence += 1;
+  const payload = {
+    idempotency_key: `${bot.id}-log-${bot.log_sequence}`,
+    bot_id: bot.id,
+    bot_metadata: input.metadata,
+    trigger: "bot_logs.update",
+    data: {
+      event_type: "runtime_log",
+      level: log.level,
+      message: log.message,
+      state: bot.state,
+      timestamp: deps.now?.() ?? new Date().toISOString(),
+      details: log.details ?? {}
+    }
+  };
+  const body = JSON.stringify(payload);
+  await Promise.all(
+    input.webhooks
+      .filter((webhook) => webhook.triggers.includes("bot_logs.update"))
+      .map((webhook) => deps.sendWebhook({ url: webhook.url, body, internalToken: deps.env.BOT_INTERNAL_TOKEN }).catch(() => undefined))
   );
 }
 

@@ -63,11 +63,15 @@ function createBrowserRecorder(env: RuntimeProcessEnv): BotRuntimeDeps["recorder
       }
 
       const joinDeadline = createJoinDeadline(input.joinTimeoutSeconds);
+      await input.onLog?.({ level: "info", message: "Starting browser audio capture", details: { sinkName: env.BOT_AUDIO_SINK_NAME?.trim() || "teams_capture" } });
       const audio = await withJoinDeadline(startPulseAudioSink(env), joinDeadline);
+      await input.onLog?.({ level: "info", message: "Browser audio capture ready", details: { sinkName: audio.sinkName } });
       const userDataDir = env.BOT_BROWSER_PROFILE_DIR || (await mkdtemp(join(tmpdir(), "minutesbot-profile-")));
       let context: any;
       try {
+        await input.onLog?.({ level: "info", message: "Loading Chromium runtime" });
         const browser = await withJoinDeadline(loadPlaywrightChromium(), joinDeadline);
+        await input.onLog?.({ level: "info", message: "Launching Teams browser", details: { headless: env.BOT_HEADLESS !== "false" } });
         context = await withJoinDeadline(
           browser.launchPersistentContext(userDataDir, {
             headless: env.BOT_HEADLESS !== "false",
@@ -78,6 +82,7 @@ function createBrowserRecorder(env: RuntimeProcessEnv): BotRuntimeDeps["recorder
           joinDeadline
         );
         const page = await context.newPage();
+        await input.onLog?.({ level: "info", message: "Opening Teams meeting URL" });
         await page.goto(input.meetingUrl, { waitUntil: "domcontentloaded", timeout: Math.min(timeoutMs(env.BOT_JOIN_TIMEOUT_MS, 90_000), remainingJoinMs(joinDeadline)) });
         const joinedState = await joinAsGuest(page, input, joinDeadline);
         await input.onState?.(joinedState);
@@ -126,6 +131,7 @@ async function loadPlaywrightChromium(): Promise<any> {
 
 async function joinAsGuest(page: any, input: RuntimeRecorderInput, deadline = createJoinDeadline(input.joinTimeoutSeconds)): Promise<"joined"> {
   if (!input.allowGuestJoin) throw new Error("Guest join is disabled for the meeting bot runtime");
+  await input.onLog?.({ level: "info", message: "Starting Teams guest join flow" });
   await input.onState?.("prejoin");
   return joinFromPrejoin(page, input, "guest", deadline);
 }
@@ -177,6 +183,7 @@ async function joinFromPrejoin(page: any, input: RuntimeRecorderInput, mode: Joi
     if (stateAfterActions === "waiting_room") {
       if (!sawLobby) {
         sawLobby = true;
+        await input.onLog?.({ level: "info", message: "Waiting in Teams lobby" });
         await input.onState?.("waiting_room");
       }
       return waitForJoined(page, input, deadline, sawLobby);
@@ -268,6 +275,7 @@ async function waitForJoined(page: any, input: RuntimeRecorderInput, deadline: J
     if (state === "waiting_room") {
       if (!emittedLobby) {
         emittedLobby = true;
+        await input.onLog?.({ level: "info", message: "Waiting in Teams lobby" });
         await input.onState?.("waiting_room");
       }
       await waitForPoll(page, deadline);
