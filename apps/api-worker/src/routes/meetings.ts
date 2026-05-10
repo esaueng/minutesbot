@@ -16,12 +16,16 @@ export const meetingsRoute = new Hono<{ Bindings: Env }>()
     const id = c.req.param("id");
     const meeting = await getMeeting(c.env.DB, id);
     if (!meeting) throw new AppError("NOT_FOUND", "Meeting not found", 404);
+    const webhookEvents = await listWebhookEvents(c.env.DB, id);
     return c.json({
-      meeting,
+      meeting: {
+        ...meeting,
+        latest_error: meeting.latest_error ?? latestWebhookError(webhookEvents)
+      },
       attendees: await listMeetingAttendees(c.env.DB, id),
       transcriptSegments: await listTranscriptSegments(c.env.DB, id),
       artifacts: await listArtifacts(c.env.DB, id),
-      webhookEvents: await listWebhookEvents(c.env.DB, id),
+      webhookEvents,
       emailDeliveries: await listEmailDeliveries(c.env.DB, id),
       summary: await getLatestSummary(c.env.DB, id)
     });
@@ -49,3 +53,21 @@ export const meetingsRoute = new Hono<{ Bindings: Env }>()
     return c.json({ ok: true });
   })
   .delete("/:id/artifacts", async (c) => c.json({ ok: true, deleted: await deleteMeetingArtifacts(c.env, c.req.param("id")) }));
+
+function latestWebhookError(events: Array<{ payload?: unknown }>): string | null {
+  for (const event of events) {
+    const payload = typeof event.payload === "string" ? parseJsonObject(event.payload) : null;
+    const data = payload && typeof payload.data === "object" && payload.data ? payload.data as Record<string, unknown> : null;
+    if (typeof data?.latest_error === "string" && data.latest_error.trim()) return data.latest_error;
+  }
+  return null;
+}
+
+function parseJsonObject(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}

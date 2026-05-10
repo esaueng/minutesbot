@@ -23,6 +23,55 @@ class FakeD1 {
   }
 }
 
+class MeetingDetailD1 {
+  prepare(sql: string) {
+    return {
+      bind() {
+        return this;
+      },
+      async first() {
+        if (sql.includes("FROM meetings WHERE id")) {
+          return {
+            id: "mtg_1",
+            calendar_uid: "teams-link-1",
+            subject: "Failed bot",
+            status: "BOT_FATAL_ERROR",
+            latest_error: null,
+            transcript_status: "not_started",
+            summary_status: "not_started",
+            created_at: "2026-05-10T03:26:00.000Z",
+            updated_at: "2026-05-10T03:26:00.000Z"
+          };
+        }
+        return null;
+      },
+      async run() {
+        return { success: true };
+      },
+      async all() {
+        if (sql.includes("FROM attendee_webhook_events")) {
+          return {
+            results: [
+              {
+                id: "wh_1",
+                meeting_id: "mtg_1",
+                payload: JSON.stringify({
+                  data: {
+                    event_type: "fatal_error",
+                    latest_error: "Teams pre-join screen did not show a Join now button"
+                  }
+                }),
+                created_at: "2026-05-10T03:26:22.959Z"
+              }
+            ]
+          };
+        }
+        return { results: [] };
+      }
+    };
+  }
+}
+
 describe("api worker", () => {
   it("returns health", async () => {
     const response = await app.request("/api/health");
@@ -124,6 +173,28 @@ describe("api worker", () => {
 
     expect(response.status).toBe(200);
     expect(send).toHaveBeenCalledWith({ type: "fetch_transcript", meetingId: "mtg_1" });
+  });
+
+  it("derives meeting detail latest_error from fatal bot webhook payloads", async () => {
+    const response = await app.request(
+      "/api/meetings/mtg_1",
+      { headers: { authorization: "Bearer test-secret" } },
+      {
+        DB: new MeetingDetailD1() as unknown as D1Database,
+        ARTIFACTS: {} as R2Bucket,
+        INVITE_QUEUE: { send: vi.fn() },
+        SUMMARY_QUEUE: { send: vi.fn() },
+        EMAIL_QUEUE: { send: vi.fn() },
+        SESSION_SECRET: "test-secret"
+      }
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      meeting: {
+        latest_error: "Teams pre-join screen did not show a Join now button"
+      }
+    });
   });
 
   it("downloads raw transcript text with a valid signed token", async () => {
