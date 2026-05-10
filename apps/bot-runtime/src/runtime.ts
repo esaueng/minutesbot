@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { BotRuntimeDeps } from "./app";
 
 type RuntimeProcessEnv = Record<string, string | undefined>;
+type RuntimeRecorderInput = Parameters<BotRuntimeDeps["recorder"]["record"]>[0];
 
 export function createDefaultDeps(env: RuntimeProcessEnv): BotRuntimeDeps {
   return {
@@ -49,8 +50,10 @@ function createBrowserRecorder(env: RuntimeProcessEnv): BotRuntimeDeps["recorder
       const page = await context.newPage();
       try {
         await page.goto(input.meetingUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs(env.BOT_JOIN_TIMEOUT_MS, 90_000) });
-        if (input.serviceAccount) await tryServiceAccountLogin(page, input.serviceAccount.email, input.serviceAccount.password);
-        await tryGuestJoin(page, input.botName);
+        const joinedState = input.serviceAccount
+          ? await joinWithServiceAccount(page, input)
+          : await joinAsGuest(page, input);
+        await input.onState?.(joinedState);
         const bytes = await recordSilentAudio(env);
         return {
           bytes,
@@ -93,19 +96,125 @@ async function loadPlaywrightChromium(): Promise<any> {
   return playwright.chromium;
 }
 
-async function tryServiceAccountLogin(page: any, email: string, password: string): Promise<void> {
-  await page.getByRole("textbox", { name: /email|phone|skype/i }).fill(email).catch(() => undefined);
-  await page.getByRole("button", { name: /next/i }).click().catch(() => undefined);
-  await page.getByRole("textbox", { name: /password/i }).fill(password).catch(() => undefined);
-  await page.getByRole("button", { name: /sign in/i }).click().catch(() => undefined);
-  await page.getByRole("button", { name: /yes|stay signed in/i }).click({ timeout: 5_000 }).catch(() => undefined);
+async function joinWithServiceAccount(page: any, input: RuntimeRecorderInput): Promise<"waiting_room" | "joined"> {
+  if (!input.serviceAccount) throw new Error("Service account credentials are missing");
+  await clickTeamsWebEntry(page);
+  await fillIfVisible(page.getByRole("textbox", { name: /email|phone|skype/i }), input.serviceAccount.email, 15_000);
+  await clickIfVisible(page.getByRole("button", { name: /next/i }), 10_000);
+  await fillIfVisible(page.getByRole("textbox", { name: /password/i }), input.serviceAccount.password, 15_000);
+  await clickIfVisible(page.getByRole("button", { name: /sign in/i }), 10_000);
+  await clickIfVisible(page.getByRole("button", { name: /yes|stay signed in/i }), 5_000);
+  return joinFromPrejoin(page, input.botName);
 }
 
-async function tryGuestJoin(page: any, botName: string): Promise<void> {
-  await page.getByText(/continue on this browser|join on the web/i).click({ timeout: 15_000 }).catch(() => undefined);
-  await page.getByPlaceholder(/type your name|enter name/i).fill(botName).catch(() => undefined);
-  await page.getByRole("button", { name: /join now|join/i }).click({ timeout: 30_000 }).catch(() => undefined);
-  await page.waitForTimeout(5_000);
+async function joinAsGuest(page: any, input: RuntimeRecorderInput): Promise<"waiting_room" | "joined"> {
+  if (!input.allowGuestJoin) throw new Error("Guest join is disabled and no service account credentials are configured");
+  await clickTeamsWebEntry(page);
+  await fillGuestName(page, input.botName);
+  return joinFromPrejoin(page, input.botName);
+}
+
+async function clickTeamsWebEntry(page: any): Promise<void> {
+  const clicked = await clickAny(
+    [
+      page.getByRole("button", { name: /continue on this browser|join on the web|use the web app|continue without audio or video/i }),
+      page.getByRole("link", { name: /continue on this browser|join on the web|use the web app/i }),
+      page.getByText(/continue on this browser|join on the web|use the web app/i)
+    ],
+    20_000
+  );
+  if (!clicked) return;
+  await page.waitForLoadState("domcontentloaded", { timeout: 15_000 }).catch(() => undefined);
+}
+
+async function fillGuestName(page: any, botName: string): Promise<void> {
+  const filled = await fillAny(
+    [
+      page.getByRole("textbox", { name: /type your name|enter name|name/i }),
+      page.getByPlaceholder(/type your name|enter name|name/i)
+    ],
+    botName,
+    20_000
+  );
+  if (!filled) {
+    const signedIn = await hasJoinedSignals(page, 1_000);
+    if (!signedIn) throw new Error("Teams pre-join screen did not show a name field");
+  }
+}
+
+async function joinFromPrejoin(page: any, botName: string): Promise<"waiting_room" | "joined"> {
+  await dismissDevicePrompts(page);
+  await fillAny([page.getByRole("textbox", { name: /type your name|enter name|name/i }), page.getByPlaceholder(/type your name|enter name|name/i)], botName, 1_000);
+  const clickedJoin = await clickAny(
+    [
+      page.getByRole("button", { name: /^join now$/i }),
+      page.getByRole("button", { name: /^join$/i }),
+      page.getByText(/^join now$/i)
+    ],
+    30_000
+  );
+  if (!clickedJoin) throw new Error("Teams pre-join screen did not show a Join now button");
+  return waitForJoinedOrLobby(page);
+}
+
+async function dismissDevicePrompts(page: any): Promise<void> {
+  await clickIfVisible(page.getByRole("button", { name: /continue without audio or video/i }), 3_000);
+  for (const label of [/microphone/i, /camera/i]) {
+    const toggle = page.getByRole("switch", { name: label });
+    const checked = await toggle.isChecked({ timeout: 1_000 }).catch(() => false);
+    if (checked) await toggle.click({ timeout: 1_000 }).catch(() => undefined);
+  }
+}
+
+async function waitForJoinedOrLobby(page: any): Promise<"waiting_room" | "joined"> {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    if (await hasJoinedSignals(page, 1_000)) return "joined";
+    if (await hasLobbySignals(page, 1_000)) return "waiting_room";
+    await page.waitForTimeout(1_000);
+  }
+  throw new Error("Teams did not confirm joined or waiting room state after Join now");
+}
+
+async function hasJoinedSignals(page: any, timeout: number): Promise<boolean> {
+  return (
+    (await page.getByRole("button", { name: /leave|hang up/i }).isVisible({ timeout }).catch(() => false)) ||
+    (await page.getByRole("button", { name: /people|participants|chat/i }).isVisible({ timeout }).catch(() => false)) ||
+    (await page.getByText(/you(?:'|’)re the only one here|meeting chat|participants/i).isVisible({ timeout }).catch(() => false))
+  );
+}
+
+async function hasLobbySignals(page: any, timeout: number): Promise<boolean> {
+  return (
+    (await page.getByText(/someone.*let you in|waiting.*lobby|you(?:'|’)re in the lobby|when the meeting starts/i).isVisible({ timeout }).catch(() => false)) ||
+    (await page.getByText(/ask to join|admit/i).isVisible({ timeout }).catch(() => false))
+  );
+}
+
+async function clickAny(locators: any[], timeout: number): Promise<boolean> {
+  for (const locator of locators) {
+    if (await clickIfVisible(locator, timeout)) return true;
+  }
+  return false;
+}
+
+async function fillAny(locators: any[], value: string, timeout: number): Promise<boolean> {
+  for (const locator of locators) {
+    if (await fillIfVisible(locator, value, timeout)) return true;
+  }
+  return false;
+}
+
+async function clickIfVisible(locator: any, timeout: number): Promise<boolean> {
+  if (!(await locator.first().isVisible({ timeout }).catch(() => false))) return false;
+  await locator.first().click({ timeout });
+  return true;
+}
+
+async function fillIfVisible(locator: any, value: string, timeout: number): Promise<boolean> {
+  if (!(await locator.first().isVisible({ timeout }).catch(() => false))) return false;
+  await locator.first().fill(value, { timeout });
+  return true;
 }
 
 async function recordSilentAudio(env: RuntimeProcessEnv): Promise<Uint8Array> {

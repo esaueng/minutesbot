@@ -10,7 +10,7 @@ type RuntimeEnv = {
   BOT_ALLOW_GUEST_JOIN?: string;
 };
 
-type BotState = "queued" | "joining" | "waiting_room" | "joined" | "recording" | "post_processing" | "ended" | "failed";
+export type BotState = "queued" | "joining" | "waiting_room" | "joined" | "recording" | "post_processing" | "ended" | "failed";
 
 type BotRecord = {
   id: string;
@@ -39,6 +39,7 @@ export type BotRuntimeDeps = {
       botImage?: { type: "image/png" | "image/jpeg"; data: string };
       serviceAccount?: { email: string; password: string };
       allowGuestJoin: boolean;
+      onState?: (state: Extract<BotState, "waiting_room" | "joined">) => Promise<void>;
     }): Promise<RecordingResult>;
   };
   recordingStore: {
@@ -135,7 +136,10 @@ async function runBotLifecycle(deps: BotRuntimeDeps, bot: BotRecord, input: z.in
         deps.env.TEAMS_RECORDER_EMAIL && deps.env.TEAMS_RECORDER_PASSWORD
           ? { email: deps.env.TEAMS_RECORDER_EMAIL, password: deps.env.TEAMS_RECORDER_PASSWORD }
           : undefined,
-      allowGuestJoin: deps.env.BOT_ALLOW_GUEST_JOIN !== "false"
+      allowGuestJoin: deps.env.BOT_ALLOW_GUEST_JOIN !== "false",
+      onState: async (state) => {
+        await updateBot(deps, bot, input, { state });
+      }
     });
     await updateBot(deps, bot, input, { state: "recording", recording_state: "recording" });
     await deps.recordingStore.putRecording({

@@ -52,7 +52,7 @@ describe("bot runtime app", () => {
         TEAMS_RECORDER_PASSWORD: "password"
       },
       checkBinary: async () => true,
-      recorder: fakeRecorder(new Uint8Array([1, 2, 3])),
+      recorder: fakeRecorder(new Uint8Array([1, 2, 3]), "joined"),
       recordingStore: {
         putRecording: async (input) => {
           stored.push(input);
@@ -91,15 +91,20 @@ describe("bot runtime app", () => {
     });
     expect(stored[0]?.bytes).toEqual(new Uint8Array([1, 2, 3]));
     await vi.waitFor(() => expect(webhooks.some((webhook) => webhook.body.includes("post_processing_completed"))).toBe(true));
+    expect(webhooks.some((webhook) => webhook.body.includes('"new_state":"joined"'))).toBe(true);
+    expect(webhooks.some((webhook) => webhook.body.includes('"new_state":"recording"'))).toBe(true);
     const completion = webhooks.find((webhook) => webhook.body.includes("post_processing_completed"));
     expect(completion?.url).toBe("https://meeting.minutes.bot/api/webhooks/bot");
     expect(completion?.internalToken).toBe("managed-token");
   });
 });
 
-function fakeRecorder(bytes = new Uint8Array([9])): BotRuntimeDeps["recorder"] {
+function fakeRecorder(bytes = new Uint8Array([9]), state?: "waiting_room" | "joined"): BotRuntimeDeps["recorder"] {
   return {
-    record: async () => ({ bytes, contentType: "audio/mpeg", joinMode: "service_account" })
+    record: async (input) => {
+      if (state) await input.onState?.(state);
+      return { bytes, contentType: "audio/mpeg", joinMode: "service_account" };
+    }
   };
 }
 
