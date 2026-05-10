@@ -128,11 +128,7 @@ async function clickTeamsWebEntry(page: any): Promise<void> {
 }
 
 async function fillGuestName(page: any, botName: string): Promise<void> {
-  const filled = await fillAny(guestNameLocators(page), botName, 20_000);
-  if (!filled) {
-    const signedIn = await hasJoinedSignals(page, 1_000);
-    if (!signedIn) throw new Error("Teams pre-join screen did not show a name field");
-  }
+  await fillAny(guestNameLocators(page), botName, 20_000);
 }
 
 async function joinFromPrejoin(page: any, botName: string): Promise<"waiting_room" | "joined"> {

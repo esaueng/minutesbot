@@ -28,6 +28,12 @@ describe("Teams runtime browser flow", () => {
 
     expect(frameNameInput.fill).toHaveBeenCalledWith("minutesbot", { timeout: 20_000 });
   });
+
+  it("does not fail before the Join button when Teams omits the guest display name field", async () => {
+    const page = fakePage();
+
+    await expect(__runtimeTest.fillGuestName(page, "minutesbot")).resolves.toBeUndefined();
+  });
 });
 
 function fakePage(input: { locators?: Record<string, ReturnType<typeof visibleLocator>>; frames?: unknown[] } = {}) {
