@@ -68,6 +68,8 @@ describe("build oneshot Wrangler configs", () => {
     expect(botConfig).toContain("meeting.minutes.bot");
     expect(botConfig).toContain('"BOT_CONTAINER_INSTANCE_ID": "production-test-container"');
     expect(botConfig).toContain('"BOT_RUNTIME_VERSION": "runtime-test-version"');
+    expect(botConfig).toContain('"binding": "ARTIFACTS"');
+    expect(botConfig).toContain('"bucket_name": "minutesbot-artifacts"');
     expect(minutesbotConfig).toContain('"binding": "BOT_RUNTIME"');
     expect(minutesbotConfig).toContain('"service": "minutesbot-meeting-bot"');
     expect(botConfig).toContain("../Dockerfile.bot");
