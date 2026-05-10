@@ -88,6 +88,54 @@ describe("Teams runtime browser flow", () => {
     expect(joinButton.click).toHaveBeenCalled();
   });
 
+  it("waits for a meeting that has not started and joins when Teams enables the join control", async () => {
+    let meetingStarted = false;
+    let joined = false;
+    const notStartedMessage = visibleLocator();
+    const joinButton = visibleLocator(() => {
+      joined = true;
+    });
+    const lobbyMessage = visibleLocator();
+    const page = fakePage({
+      roles: () => (meetingStarted ? [{ role: "button", name: "Join now", locator: joinButton }] : []),
+      texts: () => [
+        ...(!meetingStarted ? [{ text: "When the meeting starts, we'll let people know you're waiting", locator: notStartedMessage }] : []),
+        ...(joined ? [{ text: "Someone will let you in soon", locator: lobbyMessage }] : [])
+      ],
+      onWaitForTimeout: async () => {
+        meetingStarted = true;
+      }
+    });
+
+    await expect(__runtimeTest.joinAsGuest(page, guestInput())).resolves.toBe("waiting_room");
+    expect(page.waitForTimeout).toHaveBeenCalled();
+    expect(joinButton.click).toHaveBeenCalledWith({ timeout: 30_000 });
+  });
+
+  it("stays parked after clicking Join when Teams says the meeting has not started yet", async () => {
+    let clickedJoin = false;
+    let meetingStarted = false;
+    const joinButton = visibleLocator(() => {
+      clickedJoin = true;
+    });
+    const notStartedMessage = visibleLocator();
+    const joinedMessage = visibleLocator();
+    const page = fakePage({
+      roles: () => (!clickedJoin ? [{ role: "button", name: "Join now", locator: joinButton }] : []),
+      texts: () => [
+        ...(clickedJoin && !meetingStarted ? [{ text: "When the meeting starts, we'll let people know you're waiting", locator: notStartedMessage }] : []),
+        ...(clickedJoin && meetingStarted ? [{ text: "You're the only one here", locator: joinedMessage }] : [])
+      ],
+      onWaitForTimeout: async () => {
+        meetingStarted = true;
+      }
+    });
+
+    await expect(__runtimeTest.joinAsGuest(page, guestInput())).resolves.toBe("joined");
+    expect(page.waitForTimeout).toHaveBeenCalled();
+    expect(joinButton.click).toHaveBeenCalledWith({ timeout: 30_000 });
+  });
+
   it("reports a guest-join blocker instead of a missing Join now button", async () => {
     const page = fakePage({
       url: "https://teams.microsoft.com/v2/?tenant=private",

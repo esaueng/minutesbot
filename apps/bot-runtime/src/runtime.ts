@@ -10,6 +10,7 @@ type JoinMode = "guest" | "service_account";
 type JoinedState = "waiting_room" | "joined";
 
 const PREJOIN_MAX_ATTEMPTS = 60;
+const MEETING_NOT_STARTED_MAX_ATTEMPTS = 2 * 60 * 60;
 const PREJOIN_POLL_INTERVAL_MS = 1_000;
 const CONTROL_PROBE_TIMEOUT_MS = 0;
 const CONTROL_ACTION_TIMEOUT_MS = 1_000;
@@ -141,8 +142,9 @@ async function fillGuestName(page: any, botName: string): Promise<boolean> {
 async function joinFromPrejoin(page: any, botName: string, mode: JoinMode): Promise<JoinedState> {
   let filledName = false;
   let pressedEnter = false;
+  let sawMeetingNotStarted = false;
 
-  for (let attempt = 0; attempt < PREJOIN_MAX_ATTEMPTS; attempt += 1) {
+  for (let attempt = 0; attempt < MEETING_NOT_STARTED_MAX_ATTEMPTS; attempt += 1) {
     await clickTeamsWebEntry(page, CONTROL_PROBE_TIMEOUT_MS, CONTROL_ACTION_TIMEOUT_MS);
 
     await dismissDevicePrompts(page, CONTROL_PROBE_TIMEOUT_MS, CONTROL_ACTION_TIMEOUT_MS);
@@ -163,9 +165,17 @@ async function joinFromPrejoin(page: any, botName: string, mode: JoinMode): Prom
     const blocker = await prejoinBlocker(page, mode, CONTROL_PROBE_TIMEOUT_MS);
     if (blocker) throw new Error(`${blocker} ${await prejoinDiagnostic(page)}`);
 
+    if (await hasMeetingNotStartedSignals(page, CONTROL_PROBE_TIMEOUT_MS)) {
+      sawMeetingNotStarted = true;
+      await page.waitForTimeout(PREJOIN_POLL_INTERVAL_MS);
+      continue;
+    }
+
+    if (!sawMeetingNotStarted && attempt >= PREJOIN_MAX_ATTEMPTS - 1) break;
     await page.waitForTimeout(PREJOIN_POLL_INTERVAL_MS);
   }
 
+  if (sawMeetingNotStarted) throw new Error(`Teams meeting did not start before the bot wait window expired. ${await prejoinDiagnostic(page)}`);
   const suffix = pressedEnter ? " after pressing Enter" : "";
   throw new Error(`Teams pre-join screen did not show a Join now button${suffix}. ${await prejoinDiagnostic(page)}`);
 }
@@ -227,11 +237,23 @@ async function dismissDevicePrompts(page: any, visibleTimeout = 3_000, actionTim
 }
 
 async function waitForJoinedOrLobby(page: any): Promise<"waiting_room" | "joined"> {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+  let sawMeetingNotStarted = false;
+
+  for (let attempt = 0; attempt < MEETING_NOT_STARTED_MAX_ATTEMPTS; attempt += 1) {
+    await clickAny(joinButtonLocators(page), CONTROL_PROBE_TIMEOUT_MS, 30_000);
     const state = await joinedOrLobbyState(page, CONTROL_PROBE_TIMEOUT_MS);
     if (state) return state;
-    await page.waitForTimeout(1_000);
+
+    if (await hasMeetingNotStartedSignals(page, CONTROL_PROBE_TIMEOUT_MS)) {
+      sawMeetingNotStarted = true;
+      await page.waitForTimeout(PREJOIN_POLL_INTERVAL_MS);
+      continue;
+    }
+
+    if (!sawMeetingNotStarted && attempt >= PREJOIN_MAX_ATTEMPTS - 1) break;
+    await page.waitForTimeout(PREJOIN_POLL_INTERVAL_MS);
   }
+  if (sawMeetingNotStarted) throw new Error(`Teams meeting did not start before the bot wait window expired. ${await prejoinDiagnostic(page)}`);
   throw new Error("Teams did not confirm joined or waiting room state after Join now");
 }
 
@@ -252,10 +274,19 @@ async function hasJoinedSignals(page: any, timeout: number): Promise<boolean> {
 
 async function hasLobbySignals(page: any, timeout: number): Promise<boolean> {
   for (const scope of locatorScopes(page)) {
-    if (await scope.getByText(/someone.*let you in|waiting.*lobby|you(?:'|’)re in the lobby|when the meeting starts/i).isVisible({ timeout }).catch(() => false)) {
+    if (await scope.getByText(/someone.*let you in|waiting.*lobby|you(?:'|’)re in the lobby/i).isVisible({ timeout }).catch(() => false)) {
       return true;
     }
     if (await scope.getByText(/ask to join|admit/i).isVisible({ timeout }).catch(() => false)) return true;
+  }
+  return false;
+}
+
+async function hasMeetingNotStartedSignals(page: any, timeout: number): Promise<boolean> {
+  for (const scope of locatorScopes(page)) {
+    if (await scope.getByText(/when the meeting starts|meeting hasn(?:'|’)t started|meeting has not started|waiting for.*start/i).isVisible({ timeout }).catch(() => false)) {
+      return true;
+    }
   }
   return false;
 }
