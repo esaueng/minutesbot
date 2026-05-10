@@ -3,7 +3,7 @@ import { File as NodeFile } from "node:buffer";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { defaultSampleRecapRecipient, defaultSettings, type AppSettings } from "@minutesbot/shared";
-import { SettingsForm, configuredLabel, getTimeZoneOptions, parseAllowedDomains, parseEmailList, resolveListTextDraft, resolveSampleRecapRecipient } from "../components/SettingsForm";
+import { SettingsForm, configuredLabel, getTimeZoneOptions, parseAllowedDomains, parseEmailList, resolveListTextDraft, resolveSampleRecapRecipient, withSampleRecapRecipient } from "../components/SettingsForm";
 import { fileToBotImageUpload, saveSetupSettings } from "./Setup";
 
 describe("setup save status", () => {
@@ -100,6 +100,13 @@ describe("sample recap recipient", () => {
 
   it("keeps an explicitly configured sample recipient", () => {
     expect(resolveSampleRecapRecipient("reviewer@example.com")).toBe("reviewer@example.com");
+  });
+
+  it("updates the saveable email test recipient setting", () => {
+    const updated = withSampleRecapRecipient(defaultSettings, "reviewer@example.com");
+
+    expect(updated.email.testRecipient).toBe("reviewer@example.com");
+    expect(defaultSettings.email.testRecipient).toBe(defaultSampleRecapRecipient);
   });
 });
 

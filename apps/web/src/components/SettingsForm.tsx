@@ -94,7 +94,10 @@ export function SettingsForm({
         </div>
         <div className="inlineActions">
           <TestActionButton path="/api/admin/test-email" label="Test outbound email" variant="secondary" />
-          <SendSampleRecapEmail initialRecipient={resolveSampleRecapRecipient(value.email.testRecipient)} />
+          <SendSampleRecapEmail
+            recipient={resolveSampleRecapRecipient(value.email.testRecipient)}
+            onRecipientChange={(recipient) => onChange(withSampleRecapRecipient(value, recipient))}
+          />
         </div>
       </SettingsSection>
 
@@ -181,6 +184,16 @@ export function configuredLabel(configured: boolean): "Configured" | "Missing" {
 
 export function resolveSampleRecapRecipient(value: string | undefined): string {
   return value ?? defaultSampleRecapRecipient;
+}
+
+export function withSampleRecapRecipient(settings: AppSettings, recipient: string): AppSettings {
+  return {
+    ...settings,
+    email: {
+      ...settings.email,
+      testRecipient: recipient
+    }
+  };
 }
 
 function configuredTone(configured: boolean): "good" | "bad" {
@@ -356,20 +369,15 @@ function NumberWithUnit({ label, unit, value, onChange }: { label: string; unit:
   );
 }
 
-function SendSampleRecapEmail({ initialRecipient }: { initialRecipient: string }) {
-  const [recipient, setRecipient] = useState(initialRecipient);
+function SendSampleRecapEmail({ recipient, onRecipientChange }: { recipient: string; onRecipientChange: (recipient: string) => void }) {
   const [result, setResult] = useState("");
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    setRecipient(initialRecipient);
-  }, [initialRecipient]);
 
   return (
     <div className="testAction sampleRecapEmailAction">
       <label className="setupField fieldWidth-medium">
         <span>Sample recap recipient</span>
-        <input type="email" value={recipient} onChange={(event) => setRecipient(event.target.value)} />
+        <input type="email" value={recipient} onChange={(event) => onRecipientChange(event.target.value)} />
       </label>
       <button
         className="secondaryButton"
