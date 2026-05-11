@@ -72,6 +72,8 @@ export async function eligibleRecipientCount(env: Env, meetingId: string): Promi
 
 function mapBotStateToMeetingStatus(state?: string, eventType?: string) {
   if (eventType === "post_processing_completed") return "BOT_ENDED";
+  if (eventType === "cancelled" || state === "cancelled") return "CANCELLED";
+  if (eventType === "cancel_requested" || state === "cancelling") return "BOT_LEAVING";
   if (eventType === "fatal_error") return "BOT_FATAL_ERROR";
   if (!state) return undefined;
   if (state === "failed" || state.includes("fatal") || state.includes("error")) return "BOT_FATAL_ERROR";

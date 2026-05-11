@@ -70,6 +70,10 @@ export class BotClient {
     await this.request<unknown>(`/api/v1/bots/${encodeURIComponent(botId)}/delete_data`, { method: "POST" });
   }
 
+  async cancelBot(botId: string): Promise<BotRun> {
+    return this.request<BotRun>(`/api/v1/bots/${encodeURIComponent(botId)}/cancel`, { method: "POST" });
+  }
+
   private async request<T>(path: string, init: RequestInit = {}, errorMapper = mapStatus): Promise<T> {
     const response = await this.rawRequest(path, init, errorMapper);
 

@@ -6,6 +6,7 @@ class FakeD1 {
   meetings: unknown[][] = [];
   attendees: unknown[][] = [];
   auditEvents: unknown[][] = [];
+  existingMeeting: Record<string, unknown> | null = null;
   settingValue: string | null;
 
   constructor(settingValue: string | null = null) {
@@ -24,6 +25,7 @@ class FakeD1 {
         if (sql.includes("FROM settings") && db.settingValue) {
           return { key: "app", value: db.settingValue, updated_at: new Date().toISOString() };
         }
+        if (sql.includes("FROM meetings WHERE calendar_uid")) return db.existingMeeting;
         return null;
       },
       async run() {
@@ -235,4 +237,89 @@ END:VCALENDAR`
       ["vendor@example.net", 0, "excluded_external_domain"]
     ]);
   });
+
+  it("stores meeting cancellations without creating a bot when no bot exists", async () => {
+    const setReject = vi.fn();
+    const queueInvite = vi.fn(async () => undefined);
+    const db = new FakeD1();
+    const env = {
+      DB: db as unknown as D1Database,
+      ARTIFACTS: { put: vi.fn(async () => undefined) } as unknown as R2Bucket,
+      INVITE_QUEUE: { send: queueInvite }
+    };
+
+    await handleInvite(
+      { from: "alice@company.com", to: "notetaker@minutes.bot", setReject },
+      env,
+      cancelInvite("test-cancel-no-bot")
+    );
+
+    expect(setReject).not.toHaveBeenCalled();
+    expect(db.meetings[0][8]).toBe("CANCELLED");
+    expect(queueInvite).not.toHaveBeenCalled();
+    expect(db.auditEvents.some((values) => values[2] === "meeting.cancelled")).toBe(true);
+  });
+
+  it("queues active bot cancellation when a cancellation arrives for a recording meeting", async () => {
+    const setReject = vi.fn();
+    const queueInvite = vi.fn(async () => undefined);
+    const db = new FakeD1();
+    db.existingMeeting = {
+      id: "mtg_existing",
+      calendar_uid: "test-cancel-active",
+      subject: "Active cancel",
+      organizer_email: "alice@company.com",
+      teams_join_url: "https://teams.microsoft.com/l/meetup-join/abc",
+      start_time: "2026-05-04T15:00:00.000Z",
+      end_time: "2026-05-04T15:30:00.000Z",
+      status: "BOT_RECORDING",
+      attendee_bot_id: "bot_active",
+      attendee_bot_state: "recording",
+      attendee_recording_state: "recording",
+      transcript_status: "not_started",
+      summary_status: "not_started",
+      created_at: "2026-05-04T14:00:00.000Z",
+      updated_at: "2026-05-04T15:05:00.000Z"
+    };
+    const env = {
+      DB: db as unknown as D1Database,
+      ARTIFACTS: { put: vi.fn(async () => undefined) } as unknown as R2Bucket,
+      INVITE_QUEUE: { send: queueInvite }
+    };
+
+    await handleInvite(
+      { from: "alice@company.com", to: "notetaker@minutes.bot", setReject },
+      env,
+      cancelInvite("test-cancel-active")
+    );
+
+    expect(setReject).not.toHaveBeenCalled();
+    expect(db.meetings[0][0]).toBe("mtg_existing");
+    expect(db.meetings[0][8]).toBe("CANCELLED");
+    expect(queueInvite).toHaveBeenCalledWith({
+      type: "cancel_bot",
+      meetingId: "mtg_existing",
+      botId: "bot_active",
+      reason: "calendar_cancel"
+    });
+  });
 });
+
+function cancelInvite(uid: string): string {
+  return `From: Alice <alice@company.com>
+To: notetaker@minutes.bot
+Subject: Cancelled Active Meeting
+
+BEGIN:VCALENDAR
+METHOD:CANCEL
+BEGIN:VEVENT
+UID:${uid}
+SUMMARY:Active cancel
+DTSTART:20260504T150000Z
+DTEND:20260504T153000Z
+ORGANIZER;CN=Alice:mailto:alice@company.com
+ATTENDEE;CN=Alex;ROLE=REQ-PARTICIPANT:mailto:alex@company.com
+DESCRIPTION:https://teams.microsoft.com/l/meetup-join/19%3atest%40thread.v2/0?context=%7b%7d
+END:VEVENT
+END:VCALENDAR`;
+}

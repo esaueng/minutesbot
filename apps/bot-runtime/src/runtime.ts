@@ -17,7 +17,7 @@ type AudioIo = {
   mkdtemp: (prefix: string) => Promise<string>;
   readFile: (path: string) => Promise<Uint8Array>;
   rm: (path: string, options: { recursive: true; force: true }) => Promise<void>;
-  runCommand: (command: string, args: string[]) => Promise<string | void>;
+  runCommand: (command: string, args: string[], options?: { signal?: AbortSignal }) => Promise<string | void>;
 };
 
 const PREJOIN_MAX_ATTEMPTS = 60;
@@ -91,6 +91,7 @@ function createBrowserRecorder(env: RuntimeProcessEnv): BotRuntimeDeps["recorder
       await input.onLog?.({ level: "info", message: "Browser audio capture ready", details: { sinkName: audio.sinkName } });
       const userDataDir = env.BOT_BROWSER_PROFILE_DIR || (await mkdtemp(join(tmpdir(), "minutesbot-profile-")));
       let context: any;
+      let activePage: any;
       try {
         await input.onLog?.({ level: "info", message: "Loading Chromium runtime" });
         const browser = await withJoinDeadline(loadPlaywrightChromium(), joinDeadline);
@@ -109,6 +110,7 @@ function createBrowserRecorder(env: RuntimeProcessEnv): BotRuntimeDeps["recorder
             );
             await grantTeamsMediaPermissions(context, input.meetingUrl);
             const page = await context.newPage();
+            activePage = page;
             await input.onLog?.({ level: "info", message: "Opening Teams meeting URL" });
             await page.goto(input.meetingUrl, { waitUntil: "domcontentloaded", timeout: Math.min(timeoutMs(env.BOT_JOIN_TIMEOUT_MS, 90_000), remainingJoinMs(joinDeadline)) });
             return page;
@@ -122,7 +124,10 @@ function createBrowserRecorder(env: RuntimeProcessEnv): BotRuntimeDeps["recorder
         );
         await input.onState?.(joinedState);
         await input.onState?.("recording");
-        const bytes = await captureBrowserAudio(env, defaultAudioIo, audio.sinkName);
+        const bytes = await captureBrowserAudio(env, defaultAudioIo, audio.sinkName, {
+          signal: input.abortSignal,
+          shouldStop: () => activePage ? hasMeetingEndedSignals(activePage, CONTROL_PROBE_TIMEOUT_MS) : Promise.resolve(false)
+        });
         return {
           bytes,
           contentType: contentTypeForFormat(env.BOT_RECORDING_FORMAT || "mp3"),
@@ -406,6 +411,23 @@ async function hasJoinedSignals(page: any, timeout: number): Promise<boolean> {
     if (await scope.getByRole("button", { name: /leave|hang up/i }).isVisible({ timeout }).catch(() => false)) return true;
     if (await scope.getByRole("button", { name: /people|participants|chat/i }).isVisible({ timeout }).catch(() => false)) return true;
     if (await scope.getByText(/you(?:'|’)re the only one here|meeting chat|participants/i).isVisible({ timeout }).catch(() => false)) return true;
+  }
+  return false;
+}
+
+async function hasMeetingEndedSignals(page: any, timeout: number): Promise<boolean> {
+  for (const scope of locatorScopes(page)) {
+    if (
+      await scope
+        .getByText(/meeting has ended|call ended|you(?:'|’)ve left the meeting|you left the meeting|someone removed you|no longer in this meeting|thanks for joining/i)
+        .isVisible({ timeout })
+        .catch(() => false)
+    ) {
+      return true;
+    }
+    const leaveVisible = await scope.getByRole("button", { name: /leave|hang up/i }).isVisible({ timeout }).catch(() => false);
+    const inCallVisible = await scope.getByRole("button", { name: /people|participants|chat/i }).isVisible({ timeout }).catch(() => false);
+    if (!leaveVisible && !inCallVisible && await scope.getByText(/rejoin|return to home|join again/i).isVisible({ timeout }).catch(() => false)) return true;
   }
   return false;
 }
@@ -761,45 +783,87 @@ async function startPulseAudioSink(
   };
 }
 
-async function captureBrowserAudio(env: RuntimeProcessEnv, io: AudioIo, sinkName: string): Promise<Uint8Array> {
+async function captureBrowserAudio(
+  env: RuntimeProcessEnv,
+  io: AudioIo,
+  sinkName: string,
+  options: { signal?: AbortSignal; shouldStop?: () => Promise<boolean> } = {}
+): Promise<Uint8Array> {
   const dir = await io.mkdtemp(join(tmpdir(), "minutesbot-recording-"));
   const file = join(dir, "recording.mp3");
   const seconds = Math.max(1, Number(env.BOT_RECORDING_SECONDS ?? env.BOT_RECORDING_MAX_SECONDS ?? "3600"));
+  const captureController = new AbortController();
+  const abortCapture = () => {
+    if (!captureController.signal.aborted) captureController.abort();
+  };
+  options.signal?.addEventListener("abort", abortCapture, { once: true });
+  if (options.signal?.aborted) abortCapture();
+  let stopPoller: ReturnType<typeof setInterval> | undefined;
   try {
-    await io.runCommand("ffmpeg", [
-      "-y",
-      "-f",
-      "pulse",
-      "-i",
-      `${sinkName}.monitor`,
-      "-t",
-      String(seconds),
-      "-ac",
-      "1",
-      "-ar",
-      "16000",
-      "-acodec",
-      "libmp3lame",
-      file
-    ]);
+    if (options.shouldStop) {
+      stopPoller = setInterval(() => {
+        void options.shouldStop?.().then((shouldStop) => {
+          if (shouldStop) abortCapture();
+        }).catch(() => undefined);
+      }, 1_000);
+    }
+    try {
+      await io.runCommand(
+        "ffmpeg",
+        [
+          "-y",
+          "-f",
+          "pulse",
+          "-i",
+          `${sinkName}.monitor`,
+          "-t",
+          String(seconds),
+          "-ac",
+          "1",
+          "-ar",
+          "16000",
+          "-acodec",
+          "libmp3lame",
+          file
+        ],
+        { signal: captureController.signal }
+      );
+    } catch (error) {
+      if (!captureController.signal.aborted) throw error;
+    }
     return await io.readFile(file);
   } finally {
+    if (stopPoller) clearInterval(stopPoller);
+    options.signal?.removeEventListener("abort", abortCapture);
     await io.rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
-function runProcess(command: string, args: string[]): Promise<string> {
+function runProcess(command: string, args: string[], options: { signal?: AbortSignal } = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    const abort = () => {
+      child.kill("SIGTERM");
+    };
+    options.signal?.addEventListener("abort", abort, { once: true });
     child.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
     child.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
-    child.on("error", reject);
+    child.on("error", (error) => {
+      options.signal?.removeEventListener("abort", abort);
+      reject(error);
+    });
     child.on("close", (code) => {
+      options.signal?.removeEventListener("abort", abort);
+      if (options.signal?.aborted) {
+        resolve(Buffer.concat(stdout).toString("utf8"));
+        return;
+      }
       if (code === 0) resolve(Buffer.concat(stdout).toString("utf8"));
       else reject(new Error(`${command} exited with ${code}: ${Buffer.concat(stderr).toString("utf8").slice(-500)}`));
     });
+    if (options.signal?.aborted) abort();
   });
 }
 

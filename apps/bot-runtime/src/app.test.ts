@@ -143,6 +143,110 @@ describe("bot runtime app", () => {
     expect(completion?.internalToken).toBe("managed-token");
   });
 
+  it("cancels a bot before it joins without uploading a recording", async () => {
+    const stored: unknown[] = [];
+    const webhooks: Array<{ body: string }> = [];
+    const app = createBotRuntimeApp({
+      env: {
+        BOT_INTERNAL_TOKEN: "managed-token",
+        BOT_RECORDING_BUCKET_NAME: "minutesbot-artifacts"
+      },
+      checkBinary: async () => true,
+      recorder: {
+        record: async (input) => {
+          await input.onState?.("prejoin");
+          await new Promise<void>((resolve) => input.abortSignal?.addEventListener("abort", () => resolve(), { once: true }));
+          throw new Error("cancelled");
+        }
+      },
+      recordingStore: {
+        putRecording: async (input) => {
+          stored.push(input);
+        }
+      },
+      sendWebhook: async (input) => {
+        webhooks.push(input);
+      },
+      randomUUID: () => "bot_cancel_prejoin"
+    });
+
+    const createResponse = await app.request("/api/v1/bots", {
+      method: "POST",
+      headers: { authorization: "Bearer managed-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        meeting_url: "https://teams.microsoft.com/l/meetup-join/abc",
+        bot_name: "minutesbot",
+        webhooks: [{ url: "https://meeting.minutes.bot/api/webhooks/bot", triggers: ["bot.state_change"] }],
+        external_media_storage_settings: { bucket_name: "minutesbot-artifacts" },
+        metadata: { minutesbot_meeting_id: "mtg_1" }
+      })
+    });
+    expect(createResponse.status).toBe(201);
+    await vi.waitFor(() => expect(webhooks.some((webhook) => webhook.body.includes('"new_state":"prejoin"'))).toBe(true));
+
+    const cancelResponse = await app.request("/api/v1/bots/bot_cancel_prejoin/cancel", {
+      method: "POST",
+      headers: { authorization: "Bearer managed-token" }
+    });
+
+    expect(cancelResponse.status).toBe(200);
+    await vi.waitFor(() => expect(webhooks.some((webhook) => webhook.body.includes('"new_state":"cancelled"'))).toBe(true));
+    expect(stored).toEqual([]);
+    expect(webhooks.some((webhook) => webhook.body.includes("post_processing_completed"))).toBe(false);
+  });
+
+  it("cancels a recording bot, uploads available audio, and emits completion", async () => {
+    const stored: Array<{ bytes: Uint8Array }> = [];
+    const webhooks: Array<{ body: string }> = [];
+    const app = createBotRuntimeApp({
+      env: {
+        BOT_INTERNAL_TOKEN: "managed-token",
+        BOT_RECORDING_BUCKET_NAME: "minutesbot-artifacts"
+      },
+      checkBinary: async () => true,
+      recorder: {
+        record: async (input) => {
+          await input.onState?.("joined");
+          await input.onState?.("recording");
+          await new Promise<void>((resolve) => input.abortSignal?.addEventListener("abort", () => resolve(), { once: true }));
+          return { bytes: new Uint8Array([5, 6, 7]), contentType: "audio/mpeg", joinMode: "guest" };
+        }
+      },
+      recordingStore: {
+        putRecording: async (input) => {
+          stored.push(input);
+        }
+      },
+      sendWebhook: async (input) => {
+        webhooks.push(input);
+      },
+      randomUUID: () => "bot_cancel_recording"
+    });
+
+    await app.request("/api/v1/bots", {
+      method: "POST",
+      headers: { authorization: "Bearer managed-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        meeting_url: "https://teams.microsoft.com/l/meetup-join/abc",
+        bot_name: "minutesbot",
+        webhooks: [{ url: "https://meeting.minutes.bot/api/webhooks/bot", triggers: ["bot.state_change"] }],
+        external_media_storage_settings: { bucket_name: "minutesbot-artifacts", recording_file_name: "recordings/mtg_1/recording.mp3" },
+        metadata: { minutesbot_meeting_id: "mtg_1" }
+      })
+    });
+    await vi.waitFor(() => expect(webhooks.some((webhook) => webhook.body.includes('"new_state":"recording"'))).toBe(true));
+
+    const cancelResponse = await app.request("/api/v1/bots/bot_cancel_recording/cancel", {
+      method: "POST",
+      headers: { authorization: "Bearer managed-token" }
+    });
+
+    expect(cancelResponse.status).toBe(200);
+    await vi.waitFor(() => expect(stored).toHaveLength(1));
+    expect(stored[0]?.bytes).toEqual(new Uint8Array([5, 6, 7]));
+    await vi.waitFor(() => expect(webhooks.some((webhook) => webhook.body.includes("post_processing_completed"))).toBe(true));
+  });
+
   it("applies recorder-emitted recording state before uploading captured audio", async () => {
     const events: string[] = [];
     const webhooks: Array<{ body: string }> = [];

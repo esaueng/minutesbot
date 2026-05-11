@@ -161,6 +161,52 @@ export async function monitorBotJoin(env: WorkflowEnv, meetingId: string, botId:
   });
 }
 
+export async function cancelMeetingBot(env: WorkflowEnv, meetingId: string, botId: string, reason = "calendar_cancel"): Promise<void> {
+  const meeting = await getMeeting(env.DB, meetingId);
+  if (!meeting || meeting.attendee_bot_id !== botId || isTerminalBotState(meeting.attendee_bot_state, meeting.status)) return;
+
+  await createAuditLog(env.DB, {
+    eventType: "bot.cancel_requested",
+    resourceType: "meeting",
+    resourceId: meetingId,
+    metadata: { botId, reason }
+  });
+
+  try {
+    const settings = await getSettings(env.DB);
+    const client = createBotClient(env, resolveBotBaseUrl(settings.attendee.baseUrl, env.BOT_API_BASE_URL));
+    const runtimeBot = await client.cancelBot(botId);
+    await updateMeetingBotState(env.DB, meetingId, {
+      botId,
+      state: runtimeBot.state,
+      transcriptionState: runtimeBot.transcription_state,
+      recordingState: runtimeBot.recording_state,
+      status: mapBotStateToMeetingStatus(runtimeBot.state, runtimeBot.state === "cancelled" ? "cancelled" : "cancel_requested"),
+      latestError: runtimeBot.latest_error
+    });
+    await createAuditLog(env.DB, {
+      eventType: "bot.cancelled",
+      resourceType: "meeting",
+      resourceId: meetingId,
+      metadata: { botId, reason, state: runtimeBot.state }
+    });
+  } catch (error) {
+    const latestError = error instanceof Error ? error.message : String(error);
+    await updateMeetingBotState(env.DB, meetingId, {
+      botId,
+      status: "BOT_LEAVING",
+      latestError
+    });
+    await createAuditLog(env.DB, {
+      eventType: "bot.cancel_failed",
+      resourceType: "meeting",
+      resourceId: meetingId,
+      metadata: { botId, reason, error: latestError }
+    });
+    throw error;
+  }
+}
+
 export function createBotClient(env: Pick<WorkflowEnv, "BOT_INTERNAL_TOKEN" | "BOT_RUNTIME">, baseUrl: string): BotClient {
   return new BotClient({
     baseUrl,
@@ -224,6 +270,8 @@ async function latestRecordedLifecycleState(
 
 function mapBotStateToMeetingStatus(state?: string, eventType?: string): MeetingRow["status"] | undefined {
   if (eventType === "post_processing_completed") return "BOT_ENDED";
+  if (eventType === "cancelled" || state === "cancelled") return "CANCELLED";
+  if (eventType === "cancel_requested" || state === "cancelling") return "BOT_LEAVING";
   if (eventType === "fatal_error") return "BOT_FATAL_ERROR";
   if (!state) return undefined;
   if (state === "failed" || state.includes("fatal") || state.includes("error")) return "BOT_FATAL_ERROR";
@@ -235,6 +283,11 @@ function mapBotStateToMeetingStatus(state?: string, eventType?: string): Meeting
   if (state === "ended") return "BOT_ENDED";
   if (state.includes("leave")) return "BOT_LEAVING";
   return "BOT_CREATED";
+}
+
+function isTerminalBotState(state?: string | null, status?: MeetingRow["status"]): boolean {
+  if (status && ["BOT_ENDED", "SUMMARY_SENT", "BOT_FATAL_ERROR", "FAILED"].includes(status)) return true;
+  return state === "ended" || state === "failed" || state === "cancelled";
 }
 
 function isStuckJoinState(state?: string | null, status?: MeetingRow["status"]): boolean {

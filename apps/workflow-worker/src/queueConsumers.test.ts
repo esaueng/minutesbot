@@ -97,4 +97,40 @@ describe("queue consumers", () => {
     expect(ack).toHaveBeenCalledOnce();
     expect(db.prepares.some((sql) => sql.includes("FROM meetings WHERE id"))).toBe(true);
   });
+
+  it("routes cancel_bot messages through the workflow queue handler", async () => {
+    const db = new MonitorD1();
+    const ack = vi.fn();
+    const requests: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request) => {
+        requests.push(String(url));
+        return Response.json({ id: "bot_new", meeting_url: "https://teams.microsoft.com/l/meetup-join/abc", state: "cancelling" });
+      })
+    );
+
+    await handleQueueBatch(
+      {
+        messages: [
+          {
+            body: { type: "cancel_bot", meetingId: "mtg_1", botId: "bot_new", reason: "calendar_cancel" },
+            ack
+          }
+        ]
+      } as unknown as MessageBatch<unknown>,
+      {
+        DB: db as unknown as D1Database,
+        ARTIFACTS: {} as R2Bucket,
+        INVITE_QUEUE: { send: vi.fn() },
+        SUMMARY_QUEUE: { send: vi.fn() },
+        EMAIL_QUEUE: { send: vi.fn() },
+        BOT_API_BASE_URL: "https://meeting-api.minutes.bot",
+        API_BASE_URL: "https://api.minutes.bot"
+      }
+    );
+
+    expect(ack).toHaveBeenCalledOnce();
+    expect(requests).toEqual(["https://meeting-api.minutes.bot/api/v1/bots/bot_new/cancel"]);
+  });
 });

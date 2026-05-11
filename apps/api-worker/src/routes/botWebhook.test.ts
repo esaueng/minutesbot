@@ -181,6 +181,50 @@ describe("meeting bot webhook route", () => {
     ]);
   });
 
+  it("stores bot cancellations without queuing transcript processing", async () => {
+    const db = new WebhookD1();
+    const summaryQueue = { send: vi.fn(async () => undefined) };
+    const payload = {
+      idempotency_key: "wh_cancelled_1",
+      bot_id: "bot_1",
+      bot_metadata: { minutesbot_meeting_id: "mtg_1", calendar_uid: "teams-link-1" },
+      trigger: "bot.state_change",
+      data: {
+        event_type: "cancelled",
+        new_state: "cancelled",
+        transcription_state: "failed",
+        recording_state: "cancelled"
+      }
+    };
+
+    const response = await app.request(
+      "/api/webhooks/bot",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer managed-token"
+        },
+        body: JSON.stringify(payload)
+      },
+      env(db, summaryQueue)
+    );
+
+    expect(response.status).toBe(200);
+    expect(summaryQueue.send).not.toHaveBeenCalled();
+    expect(db.meetingUpdates.at(-1)).toEqual([
+      "bot_1",
+      "cancelled",
+      "failed",
+      "cancelled",
+      expect.any(String),
+      "CANCELLED",
+      null,
+      expect.any(String),
+      "mtg_1"
+    ]);
+  });
+
   it("re-applies duplicate state-change webhooks without repeating side effects", async () => {
     const db = new DuplicateWebhookD1();
     const summaryQueue = { send: vi.fn(async () => undefined) };

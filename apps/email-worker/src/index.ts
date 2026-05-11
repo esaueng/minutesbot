@@ -114,6 +114,14 @@ export async function handleInvite(message: Pick<EmailMessage, "from" | "to" | "
   );
 
   if (parsed.kind === "cancel") {
+    if (meeting.attendee_bot_id && shouldCancelBot(meeting.attendee_bot_state, meeting.status)) {
+      await env.INVITE_QUEUE.send({
+        type: "cancel_bot",
+        meetingId: meeting.id,
+        botId: meeting.attendee_bot_id,
+        reason: "calendar_cancel"
+      });
+    }
     await createAuditLog(env.DB, { actorEmail: parsed.organizer.email, eventType: "meeting.cancelled", resourceType: "meeting", resourceId: meeting.id });
     return;
   }
@@ -125,6 +133,11 @@ export async function handleInvite(message: Pick<EmailMessage, "from" | "to" | "
 function isRecorderRecipient(recipient: string, recorderEmail: string, aliases: string[] = []): boolean {
   const normalizedRecipient = recipient.trim().toLowerCase();
   return [recorderEmail, ...aliases].some((email) => email.trim().toLowerCase() === normalizedRecipient);
+}
+
+function shouldCancelBot(botState: string | null | undefined, status: MeetingStatus): boolean {
+  if (["BOT_ENDED", "SUMMARY_SENT", "FAILED", "BOT_FATAL_ERROR"].includes(status)) return false;
+  return !botState || !["ended", "failed", "cancelled"].includes(botState);
 }
 
 async function rejectInvite(env: Env, message: Pick<EmailMessage, "from" | "setReject">, status: MeetingStatus, reason: string): Promise<void> {

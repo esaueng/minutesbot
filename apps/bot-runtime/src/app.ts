@@ -10,7 +10,7 @@ type RuntimeEnv = {
   BOT_ALLOW_GUEST_JOIN?: string;
 };
 
-export type BotState = "queued" | "prejoin" | "joining" | "waiting_room" | "joined" | "recording" | "post_processing" | "ended" | "failed";
+export type BotState = "queued" | "prejoin" | "joining" | "waiting_room" | "joined" | "recording" | "cancelling" | "cancelled" | "post_processing" | "ended" | "failed";
 
 type BotRecord = {
   id: string;
@@ -22,6 +22,11 @@ type BotRecord = {
   created_at: string;
   latest_error?: string;
   log_sequence: number;
+};
+
+type BotControl = {
+  abortController: AbortController;
+  input: z.infer<typeof createBotSchema>;
 };
 
 type BotRuntimeLog = {
@@ -46,6 +51,7 @@ export type BotRuntimeDeps = {
       botImage?: { type: "image/png" | "image/jpeg"; data: string };
       allowGuestJoin: boolean;
       joinTimeoutSeconds?: number;
+      abortSignal?: AbortSignal;
       onState?: (state: Extract<BotState, "prejoin" | "waiting_room" | "joined" | "recording">) => Promise<void>;
       onLog?: (log: BotRuntimeLog) => Promise<void>;
     }): Promise<RecordingResult>;
@@ -77,6 +83,7 @@ const createBotSchema = z.object({
 export function createBotRuntimeApp(deps: BotRuntimeDeps): Hono {
   const app = new Hono();
   const bots = new Map<string, BotRecord>();
+  const controls = new Map<string, BotControl>();
 
   app.get("/_ops/health", async (c) => {
     const missing = await missingRuntimeSettings(deps);
@@ -116,7 +123,9 @@ export function createBotRuntimeApp(deps: BotRuntimeDeps): Hono {
     };
     bots.set(id, bot);
     const created = publicBot(bot);
-    void runBotLifecycle(deps, bot, input);
+    const control = { abortController: new AbortController(), input };
+    controls.set(id, control);
+    void runBotLifecycle(deps, bot, input, control).finally(() => controls.delete(id));
     return c.json(created, 201);
   });
 
@@ -130,7 +139,21 @@ export function createBotRuntimeApp(deps: BotRuntimeDeps): Hono {
 
   app.get("/api/v1/bots/:id/recording", (c) => c.json({ detail: "Recordings are uploaded directly to R2" }, 404));
 
+  app.post("/api/v1/bots/:id/cancel", async (c) => {
+    const bot = bots.get(c.req.param("id"));
+    if (!bot) return c.json({ detail: "Not found" }, 404);
+    const control = controls.get(bot.id);
+    if (isTerminalBotState(bot.state)) return c.json(publicBot(bot));
+    if (bot.state !== "cancelling") {
+      await updateBot(deps, bot, control?.input ?? fallbackInput(bot), { state: "cancelling" }, "cancel_requested");
+    }
+    control?.abortController.abort("cancelled");
+    return c.json(publicBot(bot));
+  });
+
   app.post("/api/v1/bots/:id/delete_data", (c) => {
+    controls.get(c.req.param("id"))?.abortController.abort("deleted");
+    controls.delete(c.req.param("id"));
     bots.delete(c.req.param("id"));
     return c.body(null, 204);
   });
@@ -138,7 +161,7 @@ export function createBotRuntimeApp(deps: BotRuntimeDeps): Hono {
   return app;
 }
 
-async function runBotLifecycle(deps: BotRuntimeDeps, bot: BotRecord, input: z.infer<typeof createBotSchema>): Promise<void> {
+async function runBotLifecycle(deps: BotRuntimeDeps, bot: BotRecord, input: z.infer<typeof createBotSchema>, control: BotControl): Promise<void> {
   try {
     await updateBot(deps, bot, input, { state: "joining" });
     const recording = await deps.recorder.record({
@@ -147,14 +170,16 @@ async function runBotLifecycle(deps: BotRuntimeDeps, bot: BotRecord, input: z.in
       botImage: input.bot_image,
       allowGuestJoin: deps.env.BOT_ALLOW_GUEST_JOIN !== "false",
       joinTimeoutSeconds: input.join_timeout_seconds,
+      abortSignal: control.abortController.signal,
       onState: async (state) => {
+        if (bot.state === "cancelling" || bot.state === "cancelled") return;
         await updateBot(deps, bot, input, { state, ...(state === "recording" ? { recording_state: "recording" } : {}) });
       },
       onLog: async (log) => {
         await emitBotLog(deps, input, bot, log);
       }
     });
-    if (bot.state !== "recording") {
+    if (bot.state !== "recording" && bot.state !== "cancelling") {
       await emitBotLog(deps, input, bot, { level: "info", message: "Teams joined; starting recording", details: { state: bot.state } });
       await updateBot(deps, bot, input, { state: "recording", recording_state: "recording" });
     }
@@ -169,6 +194,11 @@ async function runBotLifecycle(deps: BotRuntimeDeps, bot: BotRecord, input: z.in
     await updateBot(deps, bot, input, { state: "post_processing", recording_state: "complete" });
     await updateBot(deps, bot, input, { state: "ended", recording_state: "complete", transcription_state: "complete" }, "post_processing_completed");
   } catch (error) {
+    if (control.abortController.signal.aborted) {
+      await emitBotLog(deps, input, bot, { level: "info", message: "Meeting bot run cancelled", details: { state: bot.state } });
+      await updateBot(deps, bot, input, { state: "cancelled", recording_state: bot.recording_state === "recording" ? "cancelled" : bot.recording_state ?? "cancelled", transcription_state: bot.transcription_state ?? "failed" }, "cancelled");
+      return;
+    }
     bot.latest_error = error instanceof Error ? error.message : String(error);
     await emitBotLog(deps, input, bot, { level: "error", message: "Meeting bot lifecycle failed", details: { error: bot.latest_error } });
     await updateBot(deps, bot, input, { state: "failed", recording_state: "failed", transcription_state: "failed" }, "fatal_error");
@@ -250,6 +280,19 @@ function publicBot(bot: BotRecord) {
     transcription_state: bot.transcription_state,
     recording_state: bot.recording_state,
     latest_error: bot.latest_error
+  };
+}
+
+function isTerminalBotState(state: BotState): boolean {
+  return state === "ended" || state === "failed" || state === "cancelled";
+}
+
+function fallbackInput(bot: BotRecord): z.infer<typeof createBotSchema> {
+  return {
+    meeting_url: bot.meeting_url,
+    bot_name: "minutesbot",
+    webhooks: [],
+    metadata: bot.metadata ?? {}
   };
 }
 

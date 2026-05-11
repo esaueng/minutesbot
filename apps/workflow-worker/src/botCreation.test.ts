@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultSettings } from "@minutesbot/shared";
-import { createMeetingBot, monitorBotJoin } from "./botCreation";
+import { cancelMeetingBot, createMeetingBot, monitorBotJoin } from "./botCreation";
 import type { MeetingRow } from "@minutesbot/db";
 import type { WorkflowEnv } from "./env";
 
@@ -474,5 +474,65 @@ describe("createMeetingBot failure handling", () => {
       status: "BOT_RECORDING",
       latestError: null
     });
+  });
+
+  it("cancels an active same-bot runtime when a meeting cancellation is queued", async () => {
+    const db = new BotCreationD1();
+    db.meeting = {
+      ...db.meeting,
+      attendee_bot_id: "bot_1",
+      attendee_bot_state: "recording",
+      attendee_recording_state: "recording",
+      attendee_transcription_state: "pending",
+      status: "CANCELLED"
+    };
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        requests.push({ url: String(url), init });
+        return Response.json({
+          id: "bot_1",
+          meeting_url: "https://teams.microsoft.com/l/meetup-join/abc",
+          state: "cancelling",
+          recording_state: "recording",
+          transcription_state: "pending"
+        });
+      })
+    );
+
+    await cancelMeetingBot(env({}, db), "mtg_1", "bot_1", "calendar_cancel");
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      url: "https://meeting-api.minutes.bot/api/v1/bots/bot_1/cancel",
+      init: { method: "POST" }
+    });
+    expect(db.botStateUpdates.at(-1)).toMatchObject({
+      botId: "bot_1",
+      state: "cancelling",
+      recordingState: "recording",
+      transcriptionState: "pending",
+      status: "BOT_LEAVING"
+    });
+    expect(db.auditLogs.map((log) => log.eventType)).toEqual(expect.arrayContaining(["bot.cancel_requested", "bot.cancelled"]));
+  });
+
+  it("ignores stale queued bot cancellations for old bot ids", async () => {
+    const db = new BotCreationD1();
+    db.meeting = {
+      ...db.meeting,
+      attendee_bot_id: "bot_new",
+      attendee_bot_state: "recording",
+      status: "CANCELLED"
+    };
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+
+    await cancelMeetingBot(env({}, db), "mtg_1", "bot_old", "calendar_cancel");
+
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(db.botStateUpdates).toEqual([]);
+    expect(db.auditLogs.map((log) => log.eventType)).not.toContain("bot.cancel_requested");
   });
 });

@@ -182,6 +182,21 @@ describe("BotClient", () => {
     );
   });
 
+  it("requests runtime cancellation for an active bot", async () => {
+    const fetcher = vi.fn(async () => Response.json({ id: "bot_1", meeting_url: "https://teams.microsoft.com/l/meetup-join/x", state: "cancelling" }));
+    const client = new BotClient({ baseUrl: "https://meeting-api.minutes.bot", internalToken: "managed-token", fetcher });
+
+    await expect(client.cancelBot("bot_1")).resolves.toMatchObject({ id: "bot_1", state: "cancelling" });
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://meeting-api.minutes.bot/api/v1/bots/bot_1/cancel",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ authorization: "Bearer managed-token" })
+      })
+    );
+  });
+
   it("rejects JSON recording responses as unavailable media", async () => {
     const fetcher = vi.fn(async () => Response.json({ detail: "Recording is not available yet" }));
     const client = new BotClient({ baseUrl: "https://meeting-api.minutes.bot", fetcher });
