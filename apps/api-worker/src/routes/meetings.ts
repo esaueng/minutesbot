@@ -76,11 +76,11 @@ export const meetingsRoute = new Hono<{ Bindings: Env }>()
         state: bot.state,
         transcriptionState: bot.transcription_state,
         recordingState: bot.recording_state,
-        status: mapBotStateToMeetingStatus(bot.state, bot.state === "cancelled" ? "cancelled" : "cancel_requested"),
+        status: mapForceEndBotStateToMeetingStatus(bot.state),
         latestError: bot.latest_error
       });
       await createAuditLog(c.env.DB, {
-        eventType: "bot.cancelled",
+        eventType: forceEndAuditEventType(bot.state),
         resourceType: "meeting",
         resourceId: id,
         metadata: { botId, reason: "force_end_recording", state: bot.state }
@@ -128,8 +128,23 @@ function mapBotStateToMeetingStatus(state?: string, eventType?: string) {
   if (eventType === "cancelled" || state === "cancelled") return "CANCELLED";
   if (eventType === "cancel_requested" || state === "cancelling") return "BOT_LEAVING";
   if (state === "failed" || state?.includes("fatal") || state?.includes("error")) return "BOT_FATAL_ERROR";
+  if (state === "post_processing") return "BOT_POST_PROCESSING";
   if (state === "ended") return "BOT_ENDED";
   return undefined;
+}
+
+function mapForceEndBotStateToMeetingStatus(state?: string) {
+  if (state === "ended") return "BOT_ENDED";
+  if (state === "post_processing") return "BOT_POST_PROCESSING";
+  if (state === "failed" || state?.includes("fatal") || state?.includes("error")) return "BOT_FATAL_ERROR";
+  return mapBotStateToMeetingStatus(state === "cancelled" ? "cancelling" : state, "cancel_requested") ?? "BOT_LEAVING";
+}
+
+function forceEndAuditEventType(state?: string): string {
+  if (state === "ended") return "bot.ended";
+  if (state === "post_processing") return "bot.post_processing";
+  if (state === "failed" || state?.includes("fatal") || state?.includes("error")) return "bot.fatal_error";
+  return "bot.cancel_requested";
 }
 
 function isTerminalBotState(state?: string | null, status?: string | null): boolean {

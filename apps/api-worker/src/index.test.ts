@@ -375,8 +375,75 @@ describe("api worker", () => {
       })
     );
     expect(db.updates.at(-1)).toEqual(expect.arrayContaining(["bot_active", "cancelling", "pending", "recording", "BOT_LEAVING"]));
-    expect(db.audits.map((audit) => audit.eventType)).toEqual(["bot.cancel_requested", "bot.cancelled"]);
+    expect(db.audits.map((audit) => audit.eventType)).toEqual(["bot.cancel_requested", "bot.cancel_requested"]);
     expect(db.audits[0]?.metadata).toContain("force_end_recording");
+  });
+
+  it("stores BOT_ENDED when force-end returns an ended runtime bot", async () => {
+    const db = new ActiveBotMeetingD1();
+    const runtimeFetch = vi.fn(async () =>
+      Response.json({
+        id: "bot_active",
+        meeting_url: "https://teams.microsoft.com/l/meetup-join/abc",
+        state: "ended",
+        recording_state: "complete",
+        transcription_state: "complete"
+      })
+    );
+
+    const response = await app.request(
+      "/api/meetings/mtg_1/force-end-recording",
+      { method: "POST", headers: { authorization: "Bearer test-secret" } },
+      {
+        DB: db as unknown as D1Database,
+        ARTIFACTS: {} as R2Bucket,
+        INVITE_QUEUE: { send: vi.fn() },
+        SUMMARY_QUEUE: { send: vi.fn() },
+        EMAIL_QUEUE: { send: vi.fn() },
+        BOT_API_BASE_URL: "https://meeting-api.minutes.bot",
+        BOT_INTERNAL_TOKEN: "managed-token",
+        BOT_RUNTIME: { fetch: runtimeFetch } as unknown as Fetcher,
+        SESSION_SECRET: "test-secret"
+      }
+    );
+
+    expect(response.status).toBe(200);
+    expect(db.updates.at(-1)).toEqual(expect.arrayContaining(["bot_active", "ended", "complete", "complete", "BOT_ENDED"]));
+    expect(db.audits.map((audit) => audit.eventType)).toEqual(["bot.cancel_requested", "bot.ended"]);
+  });
+
+  it("does not map force-end runtime cancelled responses to meeting CANCELLED", async () => {
+    const db = new ActiveBotMeetingD1();
+    const runtimeFetch = vi.fn(async () =>
+      Response.json({
+        id: "bot_active",
+        meeting_url: "https://teams.microsoft.com/l/meetup-join/abc",
+        state: "cancelled",
+        recording_state: "cancelled",
+        transcription_state: "failed"
+      })
+    );
+
+    const response = await app.request(
+      "/api/meetings/mtg_1/force-end-recording",
+      { method: "POST", headers: { authorization: "Bearer test-secret" } },
+      {
+        DB: db as unknown as D1Database,
+        ARTIFACTS: {} as R2Bucket,
+        INVITE_QUEUE: { send: vi.fn() },
+        SUMMARY_QUEUE: { send: vi.fn() },
+        EMAIL_QUEUE: { send: vi.fn() },
+        BOT_API_BASE_URL: "https://meeting-api.minutes.bot",
+        BOT_INTERNAL_TOKEN: "managed-token",
+        BOT_RUNTIME: { fetch: runtimeFetch } as unknown as Fetcher,
+        SESSION_SECRET: "test-secret"
+      }
+    );
+
+    expect(response.status).toBe(200);
+    expect(db.updates.at(-1)).toEqual(expect.arrayContaining(["bot_active", "cancelled", "failed", "cancelled", "BOT_LEAVING"]));
+    expect(db.updates.flat()).not.toContain("CANCELLED");
+    expect(db.audits.map((audit) => audit.eventType)).not.toContain("bot.cancelled");
   });
 
   it("removes a meeting from history and deletes associated R2 objects", async () => {

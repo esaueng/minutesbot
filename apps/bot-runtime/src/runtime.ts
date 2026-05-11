@@ -17,7 +17,7 @@ type AudioIo = {
   mkdtemp: (prefix: string) => Promise<string>;
   readFile: (path: string) => Promise<Uint8Array>;
   rm: (path: string, options: { recursive: true; force: true }) => Promise<void>;
-  runCommand: (command: string, args: string[], options?: { signal?: AbortSignal }) => Promise<string | void>;
+  runCommand: (command: string, args: string[], options?: { signal?: AbortSignal; killGraceMs?: number }) => Promise<string | void>;
 };
 
 const PREJOIN_MAX_ATTEMPTS = 60;
@@ -28,6 +28,7 @@ const CONTROL_ACTION_TIMEOUT_MS = 1_000;
 const PREJOIN_DIAGNOSTIC_INTERVAL_MS = 15_000;
 const DEFAULT_JOIN_TIMEOUT_SECONDS = 15 * 60;
 const DEFAULT_PROCESS_TIMEOUT_MS = 30_000;
+const DEFAULT_ABORT_KILL_GRACE_MS = 2_000;
 const DEFAULT_JOIN_RETRY_ATTEMPTS = 3;
 const TEAMS_MEDIA_PERMISSION_ORIGINS = ["https://teams.microsoft.com", "https://teams.live.com", "https://teams.cloud.microsoft"] as const;
 const CHROMIUM_LAUNCH_ARGS = [
@@ -124,15 +125,29 @@ function createBrowserRecorder(env: RuntimeProcessEnv): BotRuntimeDeps["recorder
         );
         await input.onState?.(joinedState);
         await input.onState?.("recording");
-        const bytes = await captureBrowserAudio(env, defaultAudioIo, audio.sinkName, {
-          signal: input.abortSignal,
-          shouldStop: () => activePage ? hasMeetingEndedSignals(activePage, CONTROL_PROBE_TIMEOUT_MS) : Promise.resolve(false)
-        });
-        return {
-          bytes,
-          contentType: contentTypeForFormat(env.BOT_RECORDING_FORMAT || "mp3"),
-          joinMode: "guest"
-        };
+        const meetingEndController = new AbortController();
+        const abortMeetingEndWatcher = () => meetingEndController.abort();
+        input.abortSignal?.addEventListener("abort", abortMeetingEndWatcher, { once: true });
+        try {
+          const stopWhen = activePage
+            ? waitForTeamsMeetingEnd(activePage, meetingEndController.signal).then(async (reason) => {
+                if (meetingEndController.signal.aborted) return;
+                await input.onLog?.({ level: "info", message: "Teams meeting ended; stopping recording", details: { reason } });
+              })
+            : undefined;
+          const bytes = await captureBrowserAudio(env, defaultAudioIo, audio.sinkName, {
+            signal: input.abortSignal,
+            stopWhen
+          });
+          return {
+            bytes,
+            contentType: contentTypeForFormat(env.BOT_RECORDING_FORMAT || "mp3"),
+            joinMode: "guest"
+          };
+        } finally {
+          input.abortSignal?.removeEventListener("abort", abortMeetingEndWatcher);
+          meetingEndController.abort();
+        }
       } finally {
         if (context) await context.close().catch(() => undefined);
         if (!env.BOT_BROWSER_PROFILE_DIR) await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
@@ -416,20 +431,55 @@ async function hasJoinedSignals(page: any, timeout: number): Promise<boolean> {
 }
 
 async function hasMeetingEndedSignals(page: any, timeout: number): Promise<boolean> {
+  return (await meetingEndReason(page, timeout)) !== null;
+}
+
+async function hasRemovedFromMeetingSignals(page: any, timeout: number): Promise<boolean> {
+  return (await meetingEndReason(page, timeout)) === "removed";
+}
+
+async function meetingEndReason(page: any, timeout: number): Promise<"meeting_ended" | "removed" | "left" | null> {
   for (const scope of locatorScopes(page)) {
     if (
       await scope
-        .getByText(/meeting has ended|call ended|you(?:'|’)ve left the meeting|you left the meeting|someone removed you|no longer in this meeting|thanks for joining/i)
+        .getByText(/you(?:'|’)ve been removed from this meeting|removed from (?:this|the) meeting|someone removed you|no longer in this meeting/i)
         .isVisible({ timeout })
         .catch(() => false)
     ) {
-      return true;
+      return "removed";
+    }
+    if (
+      await scope
+        .getByText(/you(?:'|’)ve left the meeting|you left the meeting/i)
+        .isVisible({ timeout })
+        .catch(() => false)
+    ) {
+      return "left";
+    }
+    if (
+      await scope
+        .getByText(/meeting ended|this meeting has ended|the meeting has ended|meeting has ended|call ended|thanks for joining/i)
+        .isVisible({ timeout })
+        .catch(() => false)
+    ) {
+      return "meeting_ended";
     }
     const leaveVisible = await scope.getByRole("button", { name: /leave|hang up/i }).isVisible({ timeout }).catch(() => false);
     const inCallVisible = await scope.getByRole("button", { name: /people|participants|chat/i }).isVisible({ timeout }).catch(() => false);
-    if (!leaveVisible && !inCallVisible && await scope.getByText(/rejoin|return to home|join again/i).isVisible({ timeout }).catch(() => false)) return true;
+    if (!leaveVisible && !inCallVisible && await scope.getByText(/return to calendar|return to home|rejoin|join again|dismiss/i).isVisible({ timeout }).catch(() => false)) {
+      return "meeting_ended";
+    }
   }
-  return false;
+  return null;
+}
+
+async function waitForTeamsMeetingEnd(page: any, signal: AbortSignal): Promise<"meeting_ended" | "removed" | "left"> {
+  while (!signal.aborted) {
+    const reason = await meetingEndReason(page, CONTROL_PROBE_TIMEOUT_MS);
+    if (reason) return reason;
+    await page.waitForTimeout(2_000).catch(() => undefined);
+  }
+  return "left";
 }
 
 async function hasLobbySignals(page: any, timeout: number): Promise<boolean> {
@@ -787,7 +837,7 @@ async function captureBrowserAudio(
   env: RuntimeProcessEnv,
   io: AudioIo,
   sinkName: string,
-  options: { signal?: AbortSignal; shouldStop?: () => Promise<boolean> } = {}
+  options: { signal?: AbortSignal; stopWhen?: Promise<unknown> } = {}
 ): Promise<Uint8Array> {
   const dir = await io.mkdtemp(join(tmpdir(), "minutesbot-recording-"));
   const file = join(dir, "recording.mp3");
@@ -798,15 +848,14 @@ async function captureBrowserAudio(
   };
   options.signal?.addEventListener("abort", abortCapture, { once: true });
   if (options.signal?.aborted) abortCapture();
-  let stopPoller: ReturnType<typeof setInterval> | undefined;
+  let stopWhenSettled = false;
+  void options.stopWhen
+    ?.then(() => {
+      stopWhenSettled = true;
+      abortCapture();
+    })
+    .catch(() => undefined);
   try {
-    if (options.shouldStop) {
-      stopPoller = setInterval(() => {
-        void options.shouldStop?.().then((shouldStop) => {
-          if (shouldStop) abortCapture();
-        }).catch(() => undefined);
-      }, 1_000);
-    }
     try {
       await io.runCommand(
         "ffmpeg",
@@ -831,30 +880,47 @@ async function captureBrowserAudio(
     } catch (error) {
       if (!captureController.signal.aborted) throw error;
     }
-    return await io.readFile(file);
+    const bytes = await io.readFile(file).catch((error) => {
+      if (captureController.signal.aborted || stopWhenSettled) throw new Error(`ffmpeg stopped before producing recording bytes: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    });
+    if (bytes.byteLength === 0 && (captureController.signal.aborted || stopWhenSettled)) {
+      throw new Error("ffmpeg stopped before producing recording bytes");
+    }
+    return bytes;
   } finally {
-    if (stopPoller) clearInterval(stopPoller);
     options.signal?.removeEventListener("abort", abortCapture);
     await io.rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
-function runProcess(command: string, args: string[], options: { signal?: AbortSignal } = {}): Promise<string> {
+function runProcess(command: string, args: string[], options: { signal?: AbortSignal; killGraceMs?: number } = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    let closed = false;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
     const abort = () => {
+      if (closed) return;
       child.kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        if (!closed) child.kill("SIGKILL");
+      }, options.killGraceMs ?? DEFAULT_ABORT_KILL_GRACE_MS);
     };
     options.signal?.addEventListener("abort", abort, { once: true });
     child.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
     child.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
     child.on("error", (error) => {
+      closed = true;
+      if (killTimer) clearTimeout(killTimer);
       options.signal?.removeEventListener("abort", abort);
-      reject(error);
+      if (options.signal?.aborted) resolve(Buffer.concat(stdout).toString("utf8"));
+      else reject(error);
     });
     child.on("close", (code) => {
+      closed = true;
+      if (killTimer) clearTimeout(killTimer);
       options.signal?.removeEventListener("abort", abort);
       if (options.signal?.aborted) {
         resolve(Buffer.concat(stdout).toString("utf8"));
@@ -955,11 +1021,16 @@ async function withProcessTimeout<T>(env: RuntimeProcessEnv, promise: Promise<T>
 }
 
 export const __runtimeTest = {
+  captureBrowserAudio,
   chromiumLaunchArgs: CHROMIUM_LAUNCH_ARGS,
   createJoinDeadline,
   fillGuestName,
+  hasMeetingEndedSignals,
+  hasRemovedFromMeetingSignals,
   joinAsGuest,
   joinWithRetries,
   recordBrowserJoinedAudio,
-  recordBrowserAudio
+  recordBrowserAudio,
+  runProcess,
+  waitForTeamsMeetingEnd
 };

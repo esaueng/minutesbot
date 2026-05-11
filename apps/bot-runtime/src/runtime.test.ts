@@ -707,6 +707,94 @@ describe("Teams runtime browser flow", () => {
     expect(result).toEqual(new Uint8Array([7, 8, 9]));
   });
 
+  it("passes an abort signal into ffmpeg capture and returns partial MP3 bytes", async () => {
+    const controller = new AbortController();
+    let ffmpegSignal: AbortSignal | undefined;
+    const pending = __runtimeTest.captureBrowserAudio(
+      { BOT_RECORDING_SECONDS: "300" },
+      {
+        mkdtemp: async () => "/tmp/minutesbot-recording",
+        readFile: async () => new Uint8Array([4, 5, 6]),
+        rm: vi.fn(async () => undefined),
+        runCommand: async (_command, _args, options) => {
+          ffmpegSignal = options?.signal;
+          await new Promise<void>((resolve) => options?.signal?.addEventListener("abort", () => resolve(), { once: true }));
+          throw new Error("ffmpeg was stopped");
+        }
+      },
+      "teams_capture",
+      { signal: controller.signal }
+    );
+
+    await vi.waitFor(() => expect(ffmpegSignal).toBeDefined());
+    controller.abort("force end recording");
+
+    await expect(pending).resolves.toEqual(new Uint8Array([4, 5, 6]));
+    expect(ffmpegSignal?.aborted).toBe(true);
+  });
+
+  it("throws when aborted ffmpeg capture produces no MP3 bytes", async () => {
+    const controller = new AbortController();
+    const pending = __runtimeTest.captureBrowserAudio(
+      { BOT_RECORDING_SECONDS: "300" },
+      {
+        mkdtemp: async () => "/tmp/minutesbot-recording",
+        readFile: async () => new Uint8Array(),
+        rm: vi.fn(async () => undefined),
+        runCommand: async (_command, _args, options) => {
+          controller.abort("force end recording");
+          if (!options?.signal?.aborted) {
+            await new Promise<void>((resolve) => options?.signal?.addEventListener("abort", () => resolve(), { once: true }));
+          }
+          throw new Error("ffmpeg was stopped");
+        }
+      },
+      "teams_capture",
+      { signal: controller.signal }
+    );
+
+    await expect(pending).rejects.toThrow("ffmpeg stopped before producing recording bytes");
+  });
+
+  it("aborts recording when Teams shows meeting-ended text", async () => {
+    const page = fakePage({ texts: [{ text: "This meeting has ended", locator: visibleLocator() }] });
+    const pending = __runtimeTest.captureBrowserAudio(
+      { BOT_RECORDING_SECONDS: "300" },
+      {
+        mkdtemp: async () => "/tmp/minutesbot-recording",
+        readFile: async () => new Uint8Array([8, 8, 8]),
+        rm: vi.fn(async () => undefined),
+        runCommand: async (_command, _args, options) => {
+          await new Promise<void>((resolve) => options?.signal?.addEventListener("abort", () => resolve(), { once: true }));
+          throw new Error("ffmpeg was stopped");
+        }
+      },
+      "teams_capture",
+      { stopWhen: __runtimeTest.waitForTeamsMeetingEnd(page, new AbortController().signal) }
+    );
+
+    await expect(pending).resolves.toEqual(new Uint8Array([8, 8, 8]));
+  });
+
+  it("detects removed-from-meeting text as a Teams meeting end signal", async () => {
+    const page = fakePage({ texts: [{ text: "You've been removed from this meeting", locator: visibleLocator() }] });
+
+    await expect(__runtimeTest.waitForTeamsMeetingEnd(page, new AbortController().signal)).resolves.toBe("removed");
+  });
+
+  it("kills an ffmpeg child process that ignores SIGTERM after abort", async () => {
+    const controller = new AbortController();
+    const pending = __runtimeTest.runProcess(
+      process.execPath,
+      ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"],
+      { signal: controller.signal, killGraceMs: 10 }
+    );
+
+    setTimeout(() => controller.abort("force end recording"), 10);
+
+    await expect(pending).resolves.toBe("");
+  });
+
   it("fills the guest display name from Teams pre-join input selectors when accessibility locators miss it", async () => {
     const rawNameInput = visibleLocator();
     const page = fakePage({
