@@ -17,7 +17,7 @@
     "deploy:staging": "tsx scripts/deploy-minutesbot.ts --env staging",
     "deploy:production": "tsx scripts/deploy-minutesbot.ts --env production",
     "deploy:oneshot": "tsx scripts/deploy-oneshot.ts",
-    "bot:deploy": "wrangler deploy --config deploy/bot-container/wrangler.jsonc",
+    "bot:deploy": "tsx scripts/deploy-bot-container.ts --env production",
     "db:migrate:local": "wrangler d1 migrations apply minutesbot --local",
     "db:migrate:remote": "wrangler d1 migrations apply minutesbot --remote",
     "setup:cloudflare": "tsx scripts/setup-cloudflare.ts",

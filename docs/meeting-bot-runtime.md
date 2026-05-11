@@ -16,6 +16,7 @@ wrangler secret put SESSION_SECRET
 ```
 
 The runtime joins Teams as a guest using the configured bot display name. `pnpm deploy:oneshot` generates and pushes the internal meeting bot token automatically; admins do not configure bot API or webhook keys.
+Use `pnpm deploy:oneshot --env production` for production deploys. For container-only updates, `pnpm bot:deploy` generates `.wrangler/oneshot-bot.jsonc` with a fresh `BOT_CONTAINER_INSTANCE_ID` and current git `BOT_RUNTIME_VERSION` before running Wrangler, so Cloudflare Containers do not keep routing to an old sleeping instance.
 
 ## Runtime Contract
 
@@ -45,3 +46,4 @@ https://meeting-api.minutes.bot/_ops/health
 ```
 
 The health response reports missing runtime pieces such as `chromium`, `ffmpeg`, or `pulseaudio`.
+After a bot runtime deploy, compare `version`, `diagnosticVersion`, and `containerInstanceId` with the previous response to confirm the new container is serving traffic.

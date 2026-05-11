@@ -23,8 +23,9 @@ type AudioIo = {
 const PREJOIN_MAX_ATTEMPTS = 60;
 const MEETING_NOT_STARTED_MAX_ATTEMPTS = 2 * 60 * 60;
 const PREJOIN_POLL_INTERVAL_MS = 1_000;
-const CONTROL_PROBE_TIMEOUT_MS = 0;
+const CONTROL_PROBE_TIMEOUT_MS = 1_500;
 const CONTROL_ACTION_TIMEOUT_MS = 1_000;
+const PREJOIN_DIAGNOSTIC_INTERVAL_MS = 15_000;
 const DEFAULT_JOIN_TIMEOUT_SECONDS = 15 * 60;
 const DEFAULT_PROCESS_TIMEOUT_MS = 30_000;
 const DEFAULT_JOIN_RETRY_ATTEMPTS = 3;
@@ -208,16 +209,7 @@ async function grantTeamsMediaPermissions(context: any, meetingUrl: string): Pro
 }
 
 async function clickTeamsWebEntry(page: any, visibleTimeout = 20_000, actionTimeout = visibleTimeout): Promise<boolean> {
-  const clicked = await clickAny(
-    locatorScopes(page).flatMap((scope) => [
-      scope.getByRole("button", { name: /continue on this browser|join on the web|use the web app|continue without audio or video/i }),
-      scope.getByRole("link", { name: /continue on this browser|join on the web|use the web app/i }),
-      scope.getByText(/continue on this browser|join on the web|use the web app/i)
-    ]),
-    visibleTimeout,
-    actionTimeout,
-    { suppressClickErrors: true }
-  );
+  const clicked = await clickAny(webEntryLocators(page), visibleTimeout, actionTimeout, { suppressClickErrors: true });
   if (!clicked) return false;
   await page.waitForLoadState("domcontentloaded", { timeout: actionTimeout }).catch(() => undefined);
   return true;
@@ -232,9 +224,13 @@ async function joinFromPrejoin(page: any, input: RuntimeRecorderInput, mode: Joi
   let pressedEnter = false;
   let sawMeetingNotStarted = false;
   let sawLobby = false;
+  let lastDiagnosticAt = Date.now();
 
   for (let attempt = 0; attempt < MEETING_NOT_STARTED_MAX_ATTEMPTS; attempt += 1) {
     checkJoinDeadline(deadline);
+    await emitPrejoinDiagnosticIfDue(page, input, attempt + 1, lastDiagnosticAt).then((emitted) => {
+      if (emitted) lastDiagnosticAt = Date.now();
+    });
     await throwIfTeamsBlocker(page, mode, CONTROL_PROBE_TIMEOUT_MS);
     await clickTeamsWebEntry(page, CONTROL_PROBE_TIMEOUT_MS, CONTROL_ACTION_TIMEOUT_MS);
 
@@ -245,7 +241,10 @@ async function joinFromPrejoin(page: any, input: RuntimeRecorderInput, mode: Joi
     await turnOffMediaInputs(page, CONTROL_PROBE_TIMEOUT_MS, CONTROL_ACTION_TIMEOUT_MS);
 
     if (await clickAny(joinButtonLocators(page), CONTROL_PROBE_TIMEOUT_MS, 30_000, { suppressClickErrors: true })) {
-      return waitForJoined(page, input, deadline, sawLobby);
+      if (await hasJoinedSignals(page, CONTROL_PROBE_TIMEOUT_MS)) return "joined";
+      await input.onLog?.({ level: "info", message: "Clicked Teams join control; waiting for admission" });
+      await input.onState?.("waiting_room");
+      return waitForJoined(page, input, deadline, true);
     }
 
     if (filledName && !pressedEnter) {
@@ -285,11 +284,22 @@ async function joinFromPrejoin(page: any, input: RuntimeRecorderInput, mode: Joi
 
 function joinButtonLocators(page: any): any[] {
   return locatorScopes(page).flatMap((scope) => [
+    scope.locator('button[data-tid="prejoin-join-button"]'),
+    scope.locator("button#prejoin-join-button"),
     scope.locator('[data-tid="prejoin-join-button"]'),
     scope.getByRole("button", { name: /join now|ask to join|join/i }),
     scope.getByRole("link", { name: /join now|ask to join|join/i }),
     scope.getByText(/^(join now|ask to join|join)$/i),
     ...joinButtonSelectors().map((selector) => scope.locator(selector))
+  ]);
+}
+
+function webEntryLocators(page: any): any[] {
+  return locatorScopes(page).flatMap((scope) => [
+    scope.getByRole("button", { name: /continue on this browser|join on the web|use the web app|continue without audio or video/i }),
+    scope.getByRole("link", { name: /continue on this browser|join on the web|use the web app/i }),
+    scope.getByText(/continue on this browser|join on the web|use the web app/i),
+    ...webEntrySelectors().map((selector) => scope.locator(selector))
   ]);
 }
 
@@ -401,10 +411,10 @@ async function hasJoinedSignals(page: any, timeout: number): Promise<boolean> {
 }
 
 async function hasLobbySignals(page: any, timeout: number): Promise<boolean> {
+  const lobbyPattern =
+    /someone.*let you in|you(?:'|’)re in the lobby|waiting.*lobby|people.*know.*you(?:'|’)re waiting|we(?:'|’)ve let.*know.*waiting|you(?:'|’)ll join when someone lets you in|hang tight|wait.*admit|waiting to be admitted/i;
   for (const scope of locatorScopes(page)) {
-    if (await scope.getByText(/someone.*let you in|waiting.*lobby|you(?:'|’)re in the lobby/i).isVisible({ timeout }).catch(() => false)) {
-      return true;
-    }
+    if (await scope.getByText(lobbyPattern).isVisible({ timeout }).catch(() => false)) return true;
     if (await scope.getByText(/ask to join|admit/i).isVisible({ timeout }).catch(() => false)) return true;
   }
   return false;
@@ -483,9 +493,64 @@ async function prejoinDiagnostic(page: any): Promise<string> {
   );
 }
 
+async function emitPrejoinDiagnosticIfDue(page: any, input: RuntimeRecorderInput, attempt: number, lastDiagnosticAt: number): Promise<boolean> {
+  if (Date.now() - lastDiagnosticAt < PREJOIN_DIAGNOSTIC_INTERVAL_MS) return false;
+  const details = await prejoinDiagnosticDetails(page, attempt);
+  await input.onLog?.({ level: "info", message: "Teams prejoin diagnostic", details });
+  return true;
+}
+
+async function prejoinDiagnosticDetails(page: any, attempt: number): Promise<Record<string, unknown>> {
+  const [controls, hasNameField, hasJoinButton, hasWebEntryLocator, hasLobbyText, hasJoinedSignal, diagnostic] = await Promise.all([
+    compactVisibleControls(page),
+    hasVisibleLocator(guestNameLocators(page), CONTROL_PROBE_TIMEOUT_MS),
+    hasVisibleLocator(joinButtonLocators(page), CONTROL_PROBE_TIMEOUT_MS),
+    hasVisibleLocator(webEntryLocators(page), CONTROL_PROBE_TIMEOUT_MS),
+    hasLobbySignals(page, CONTROL_PROBE_TIMEOUT_MS),
+    hasJoinedSignals(page, CONTROL_PROBE_TIMEOUT_MS),
+    prejoinDiagnostic(page)
+  ]);
+  const controlText = controls.join(" ").toLowerCase();
+  return {
+    attempt,
+    url: redactUrl(await safeString(() => page.url())),
+    controls,
+    hasNameField,
+    hasJoinButton,
+    hasWebEntryButton:
+      hasWebEntryLocator || /continue on this browser|join on the web|join-on-web|joinonweb|use the web app/.test(controlText),
+    hasLobbyText,
+    hasJoinedSignal,
+    diagnostic
+  };
+}
+
+async function compactVisibleControls(page: any): Promise<string[]> {
+  const controlsByScope = await Promise.all(locatorScopes(page).map((scope) => visibleControlsForScope(scope)));
+  return controlsByScope.flat().filter(Boolean).slice(0, 8);
+}
+
 async function diagnosticForScope(scope: any, index: number): Promise<string> {
   const url = redactUrl(await safeString(() => typeof scope.url === "function" ? scope.url() : ""));
-  const visibleControls = await safeEvaluate(scope, () => {
+  const visibleControls = await visibleControlRecords(scope);
+  const ready = sanitizeDiagnosticText(String((await safeEvaluate(scope, () => document.readyState)) ?? "unknown"));
+  const body = sanitizeDiagnosticText(String((await safeEvaluate(scope, () => document.body?.innerText ?? "")) ?? ""));
+  const snippets = Array.isArray(visibleControls)
+    ? visibleControls.map((control) => compactControl(control as Record<string, string>)).filter(Boolean).slice(0, 8)
+    : [];
+  const counts = await selectorCounts(scope, [...guestNameSelectors(), ...joinButtonSelectors(), ...webEntrySelectors()]);
+  return `scope${index}{url=${url || "unknown"} ready=${ready || "unknown"} counts=${counts.join(",")} controls=${snippets.join(";") || "none"} body=${body || "empty"}}`;
+}
+
+async function visibleControlsForScope(scope: any): Promise<string[]> {
+  const visibleControls = await visibleControlRecords(scope);
+  return Array.isArray(visibleControls)
+    ? visibleControls.map((control) => compactControl(control as Record<string, string>)).filter(Boolean).slice(0, 8)
+    : [];
+}
+
+async function visibleControlRecords(scope: any): Promise<unknown[] | null> {
+  return safeEvaluate(scope, () => {
     const controls = Array.from(document.querySelectorAll("button,a,[role='button'],[role='link'],input,[aria-label],[title]"));
     return controls
       .filter((element) => {
@@ -505,21 +570,18 @@ async function diagnosticForScope(scope: any, index: number): Promise<string> {
         id: element.id ?? ""
       }));
   });
-  const ready = sanitizeDiagnosticText(String((await safeEvaluate(scope, () => document.readyState)) ?? "unknown"));
-  const body = sanitizeDiagnosticText(String((await safeEvaluate(scope, () => document.body?.innerText ?? "")) ?? ""));
-  const snippets = Array.isArray(visibleControls)
-    ? visibleControls.map((control) => compactControl(control as Record<string, string>)).filter(Boolean).slice(0, 8)
-    : [];
-  const counts = await selectorCounts(scope, [...guestNameSelectors(), ...joinButtonSelectors()]);
-  return `scope${index}{url=${url || "unknown"} ready=${ready || "unknown"} counts=${counts.join(",")} controls=${snippets.join(";") || "none"} body=${body || "empty"}}`;
 }
 
 function joinButtonSelectors(): string[] {
   return [
+    'button[data-tid="prejoin-join-button"]',
+    "button#prejoin-join-button",
     'button[data-tid*="join" i]',
     '[role="button"][data-tid*="join" i]',
     'button[id*="join" i]',
     '[role="button"][id*="join" i]',
+    'button[aria-label*="ask to join" i]',
+    'button[aria-label*="join now" i]',
     'button[aria-label*="join" i]',
     '[role="button"][aria-label*="join" i]',
     'button[title*="join" i]',
@@ -528,6 +590,15 @@ function joinButtonSelectors(): string[] {
     'a[id*="join" i]',
     'a[aria-label*="join" i]',
     'a[title*="join" i]'
+  ];
+}
+
+function webEntrySelectors(): string[] {
+  return [
+    'button[data-tid*="join-on-web" i]',
+    'button[data-tid*="joinOnWeb" i]',
+    'button[aria-label*="continue on this browser" i]',
+    'button[aria-label*="join on the web" i]'
   ];
 }
 
@@ -600,6 +671,13 @@ async function clickAny(locators: any[], visibleTimeout: number, actionTimeout =
 async function fillAny(locators: any[], value: string, visibleTimeout: number, actionTimeout = visibleTimeout): Promise<boolean> {
   for (const locator of locators) {
     if (await fillIfVisible(locator, value, visibleTimeout, actionTimeout)) return true;
+  }
+  return false;
+}
+
+async function hasVisibleLocator(locators: any[], visibleTimeout: number): Promise<boolean> {
+  for (const locator of locators) {
+    if (await locator.first().isVisible({ timeout: visibleTimeout }).catch(() => false)) return true;
   }
   return false;
 }

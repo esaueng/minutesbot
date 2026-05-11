@@ -280,6 +280,161 @@ describe("Teams runtime browser flow", () => {
     expect(page.waitForTimeout).toHaveBeenCalled();
   });
 
+  it("emits waiting_room immediately after a successful Join click even before Teams renders lobby text", async () => {
+    const states: string[] = [];
+    const logs: string[] = [];
+    let joined = false;
+    let admitted = false;
+    const joinButton = visibleLocator(() => {
+      joined = true;
+    });
+    const joinedMessage = visibleLocator();
+    const page = fakePage({
+      roles: () => (!joined ? [{ role: "button", name: "Ask to join", locator: joinButton }] : []),
+      texts: () => (admitted ? [{ text: "You're the only one here", locator: joinedMessage }] : []),
+      onWaitForTimeout: async () => {
+        admitted = true;
+      }
+    });
+
+    await expect(
+      __runtimeTest.joinAsGuest(page, {
+        ...guestInput(),
+        onState: async (state) => {
+          states.push(state);
+        },
+        onLog: async (log) => {
+          logs.push(log.message);
+        }
+      })
+    ).resolves.toBe("joined");
+
+    expect(states).toEqual(["prejoin", "waiting_room"]);
+    expect(logs).toContain("Clicked Teams join control; waiting for admission");
+  });
+
+  it("detects Teams lobby text variants", async () => {
+    const variants = [
+      "Someone will let you in soon",
+      "You're in the lobby",
+      "Waiting in the lobby",
+      "We've let people in the meeting know you're waiting",
+      "People in the meeting know you're waiting",
+      "You'll join when someone lets you in",
+      "Hang tight",
+      "Wait for someone to admit you",
+      "waiting to be admitted"
+    ];
+
+    for (const text of variants) {
+      const states: string[] = [];
+      const joinedMessage = visibleLocator();
+      let admitted = false;
+      const page = fakePage({
+        texts: () => [
+          ...(!admitted ? [{ text, locator: visibleLocator() }] : []),
+          ...(admitted ? [{ text: "You're the only one here", locator: joinedMessage }] : [])
+        ],
+        onWaitForTimeout: async () => {
+          admitted = true;
+        }
+      });
+
+      await expect(
+        __runtimeTest.joinAsGuest(page, {
+          ...guestInput(),
+          onState: async (state) => {
+            states.push(state);
+          }
+        })
+      ).resolves.toBe("joined");
+      expect(states).toEqual(["prejoin", "waiting_room"]);
+    }
+  });
+
+  it("clicks a Teams Join button exposed only through button#prejoin-join-button", async () => {
+    const joinButton = visibleLocator();
+    const joinedMessage = visibleLocator();
+    let admitted = false;
+    const page = fakePage({
+      locators: {
+        "button#prejoin-join-button": joinButton
+      },
+      texts: () => (admitted ? [{ text: "You're the only one here", locator: joinedMessage }] : []),
+      onWaitForTimeout: async () => {
+        admitted = true;
+      }
+    });
+
+    await expect(__runtimeTest.joinAsGuest(page, guestInput())).resolves.toBe("joined");
+    expect(joinButton.click).toHaveBeenCalledWith({ timeout: 30_000 });
+  });
+
+  it("clicks a Teams web-entry button exposed only through raw selector attributes", async () => {
+    let prejoinRendered = false;
+    let admitted = false;
+    const webEntry = visibleLocator(() => {
+      prejoinRendered = true;
+    });
+    const joinButton = visibleLocator();
+    const joinedMessage = visibleLocator();
+    const page = fakePage({
+      locators: () => ({
+        ...(!prejoinRendered ? { 'button[data-tid*="join-on-web" i]': webEntry } : {}),
+        ...(prejoinRendered ? { 'button[data-tid="prejoin-join-button"]': joinButton } : {})
+      }),
+      texts: () => (admitted ? [{ text: "You're the only one here", locator: joinedMessage }] : []),
+      onWaitForTimeout: async () => {
+        admitted = true;
+      }
+    });
+
+    await expect(__runtimeTest.joinAsGuest(page, guestInput())).resolves.toBe("joined");
+    expect(webEntry.click).toHaveBeenCalledWith({ timeout: 1_000 });
+    expect(joinButton.click).toHaveBeenCalledWith({ timeout: 30_000 });
+  });
+
+  it("emits redacted prejoin diagnostics during long prejoin polling", async () => {
+    const nowSpy = vi.spyOn(Date, "now");
+    let now = 0;
+    nowSpy.mockImplementation(() => now);
+    const logs: Array<{ message: string; details?: Record<string, unknown> }> = [];
+    const page = fakePage({
+      url: "https://teams.microsoft.com/l/meetup-join/secret?context=private&email=person@example.com",
+      controls: [{ tag: "button", text: "Continue on this browser", tid: "join-on-web" }],
+      onWaitForTimeout: async () => {
+        now += 1_000;
+      }
+    });
+
+    try {
+      await expect(
+        __runtimeTest.joinAsGuest(page, {
+          ...guestInput(),
+          joinTimeoutSeconds: 16,
+          onLog: async (log) => {
+            logs.push(log);
+          }
+        })
+      ).rejects.toThrow("Meeting bot did not join before the 16 seconds timeout expired");
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    const diagnosticLog = logs.find((log) => log.message === "Teams prejoin diagnostic");
+    expect(diagnosticLog?.details).toMatchObject({
+      attempt: expect.any(Number),
+      url: "teams.microsoft.com/l/meetup-join?...",
+      hasNameField: false,
+      hasJoinButton: false,
+      hasWebEntryButton: true,
+      hasLobbyText: false,
+      hasJoinedSignal: false
+    });
+    expect(JSON.stringify(diagnosticLog?.details)).not.toContain("person@example.com");
+    expect(JSON.stringify(diagnosticLog?.details)).not.toContain("context=private");
+  });
+
   it("fails instead of recording when the lobby does not admit the bot before the join timeout", async () => {
     const nowSpy = vi.spyOn(Date, "now");
     let now = 0;

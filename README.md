@@ -43,6 +43,7 @@ wrangler secret put SESSION_SECRET
 ```
 
 The one-shot deploy script generates and pushes the internal meeting bot token automatically; there are no bot API or webhook keys to configure.
+Prefer `pnpm deploy:oneshot --env production` for production deploys because it generates a fresh meeting bot container instance and runtime version. `pnpm bot:deploy` is reserved for container-only updates and also writes a fresh generated bot config before deploying.
 
 ## Commands
 
@@ -55,6 +56,14 @@ The one-shot deploy script generates and pushes the internal meeting bot token a
 - `pnpm setup:cloudflare`
 - `pnpm bot:deploy`
 - `pnpm check`
+
+After deploying the meeting bot container, verify the live runtime is the new container:
+
+```bash
+curl -s https://meeting-api.minutes.bot/_ops/health | jq
+```
+
+Confirm `version`, `diagnosticVersion`, and `containerInstanceId` changed from the previous deploy.
 
 ## Docs
 
