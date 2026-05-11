@@ -344,12 +344,13 @@ describe("createMeetingBot failure handling", () => {
     });
   });
 
-  it("marks a same-bot joining state fatal when the monitor timeout expires", async () => {
+  it("requeues a same-bot prejoin state once before marking it fatal", async () => {
     const db = new BotCreationD1();
+    const inviteQueue = { send: vi.fn() };
     db.meeting = {
       ...db.meeting,
       attendee_bot_id: "bot_1",
-      attendee_bot_state: "joining",
+      attendee_bot_state: "prejoin",
       attendee_transcription_state: "pending",
       attendee_recording_state: "pending",
       status: "BOT_JOINING"
@@ -358,8 +359,65 @@ describe("createMeetingBot failure handling", () => {
       "fetch",
       vi.fn(async (url: string | URL | Request) => {
         expect(String(url)).toBe("https://meeting-bot.example.com/api/v1/bots/bot_1");
-        return Response.json({ id: "bot_1", meeting_url: "https://teams.microsoft.com/l/meetup-join/abc", state: "joining" });
+        return Response.json({ id: "bot_1", meeting_url: "https://teams.microsoft.com/l/meetup-join/abc", state: "prejoin" });
       })
+    );
+
+    await monitorBotJoin(env({ INVITE_QUEUE: inviteQueue }, db), "mtg_1", "bot_1");
+
+    expect(db.botStateUpdates).toEqual([]);
+    expect(inviteQueue.send).toHaveBeenCalledWith({ type: "monitor_bot_join", meetingId: "mtg_1", botId: "bot_1", attempt: 1 }, { delaySeconds: 60 });
+  });
+
+  it("marks a same-bot prejoin state fatal with state-specific text after monitor grace expires", async () => {
+    const db = new BotCreationD1();
+    db.meeting = {
+      ...db.meeting,
+      attendee_bot_id: "bot_1",
+      attendee_bot_state: "prejoin",
+      attendee_transcription_state: "pending",
+      attendee_recording_state: "pending",
+      status: "BOT_JOINING"
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ id: "bot_1", meeting_url: "https://teams.microsoft.com/l/meetup-join/abc", state: "prejoin" }))
+    );
+
+    await monitorBotJoin(env({}, db), "mtg_1", "bot_1", 1);
+
+    expect(db.botStateUpdates.at(-1)).toMatchObject({
+      botId: "bot_1",
+      state: "failed",
+      transcriptionState: "failed",
+      recordingState: "failed",
+      status: "BOT_FATAL_ERROR",
+      latestError: "Meeting bot remained on the Teams pre-join screen after the 15 minute join timeout expired"
+    });
+  });
+
+  it("preserves runtime latest_error instead of replacing it with monitor timeout text", async () => {
+    const db = new BotCreationD1();
+    db.meeting = {
+      ...db.meeting,
+      attendee_bot_id: "bot_1",
+      attendee_bot_state: "prejoin",
+      attendee_transcription_state: "pending",
+      attendee_recording_state: "pending",
+      status: "BOT_JOINING"
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          id: "bot_1",
+          meeting_url: "https://teams.microsoft.com/l/meetup-join/abc",
+          state: "failed",
+          transcription_state: "failed",
+          recording_state: "failed",
+          latest_error: "Teams guest join is blocked or requires sign-in."
+        })
+      )
     );
 
     await monitorBotJoin(env({}, db), "mtg_1", "bot_1");
@@ -370,7 +428,7 @@ describe("createMeetingBot failure handling", () => {
       transcriptionState: "failed",
       recordingState: "failed",
       status: "BOT_FATAL_ERROR",
-      latestError: "Meeting bot remained in joining after the 15 minute waiting room timeout expired"
+      latestError: "Teams guest join is blocked or requires sign-in."
     });
   });
 

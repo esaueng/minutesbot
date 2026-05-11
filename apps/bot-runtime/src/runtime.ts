@@ -27,6 +27,14 @@ const CONTROL_PROBE_TIMEOUT_MS = 0;
 const CONTROL_ACTION_TIMEOUT_MS = 1_000;
 const DEFAULT_JOIN_TIMEOUT_SECONDS = 15 * 60;
 const DEFAULT_PROCESS_TIMEOUT_MS = 30_000;
+const DEFAULT_JOIN_RETRY_ATTEMPTS = 3;
+
+class TeamsJoinError extends Error {
+  constructor(message: string, readonly retryable: boolean) {
+    super(message);
+    this.name = "TeamsJoinError";
+  }
+}
 
 export function createDefaultDeps(env: RuntimeProcessEnv): BotRuntimeDeps {
   return {
@@ -72,19 +80,37 @@ function createBrowserRecorder(env: RuntimeProcessEnv): BotRuntimeDeps["recorder
         await input.onLog?.({ level: "info", message: "Loading Chromium runtime" });
         const browser = await withJoinDeadline(loadPlaywrightChromium(), joinDeadline);
         await input.onLog?.({ level: "info", message: "Launching Teams browser", details: { headless: env.BOT_HEADLESS !== "false" } });
-        context = await withJoinDeadline(
-          browser.launchPersistentContext(userDataDir, {
-            headless: env.BOT_HEADLESS !== "false",
-            executablePath: env.CHROMIUM_EXECUTABLE_PATH,
-            env: { ...process.env, PULSE_SINK: audio.sinkName },
-            args: ["--use-fake-ui-for-media-stream", "--no-sandbox", "--disable-dev-shm-usage"]
-          }),
-          joinDeadline
+        const joinedState = await joinWithRetries(
+          async () => {
+            if (context) await context.close().catch(() => undefined);
+            context = await withJoinDeadline(
+              browser.launchPersistentContext(userDataDir, {
+                headless: env.BOT_HEADLESS !== "false",
+                executablePath: env.CHROMIUM_EXECUTABLE_PATH,
+                env: { ...process.env, PULSE_SINK: audio.sinkName },
+                args: [
+                  "--autoplay-policy=no-user-gesture-required",
+                  "--use-fake-ui-for-media-stream",
+                  "--disable-blink-features=AutomationControlled",
+                  "--no-sandbox",
+                  "--disable-dev-shm-usage"
+                ]
+              }),
+              joinDeadline
+            );
+            await grantTeamsMediaPermissions(context, input.meetingUrl);
+            const page = await context.newPage();
+            await input.onLog?.({ level: "info", message: "Opening Teams meeting URL" });
+            await page.goto(input.meetingUrl, { waitUntil: "domcontentloaded", timeout: Math.min(timeoutMs(env.BOT_JOIN_TIMEOUT_MS, 90_000), remainingJoinMs(joinDeadline)) });
+            return page;
+          },
+          input,
+          joinDeadline,
+          DEFAULT_JOIN_RETRY_ATTEMPTS,
+          async (attempt, error) => {
+            await input.onLog?.({ level: "warning", message: "Retrying Teams guest join", details: { attempt, error: error.message } });
+          }
         );
-        const page = await context.newPage();
-        await input.onLog?.({ level: "info", message: "Opening Teams meeting URL" });
-        await page.goto(input.meetingUrl, { waitUntil: "domcontentloaded", timeout: Math.min(timeoutMs(env.BOT_JOIN_TIMEOUT_MS, 90_000), remainingJoinMs(joinDeadline)) });
-        const joinedState = await joinAsGuest(page, input, joinDeadline);
         await input.onState?.(joinedState);
         const bytes = await captureBrowserAudio(env, defaultAudioIo, audio.sinkName);
         return {
@@ -131,9 +157,43 @@ async function loadPlaywrightChromium(): Promise<any> {
 
 async function joinAsGuest(page: any, input: RuntimeRecorderInput, deadline = createJoinDeadline(input.joinTimeoutSeconds)): Promise<"joined"> {
   if (!input.allowGuestJoin) throw new Error("Guest join is disabled for the meeting bot runtime");
+  await grantTeamsMediaPermissions(page.context?.(), input.meetingUrl);
   await input.onLog?.({ level: "info", message: "Starting Teams guest join flow" });
   await input.onState?.("prejoin");
   return joinFromPrejoin(page, input, "guest", deadline);
+}
+
+async function joinWithRetries(
+  pageFactory: () => any | Promise<any>,
+  input: RuntimeRecorderInput,
+  deadline: JoinDeadline,
+  maxAttempts = DEFAULT_JOIN_RETRY_ATTEMPTS,
+  onRetry?: (attempt: number, error: Error) => Promise<void>
+): Promise<"joined"> {
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    checkJoinDeadline(deadline);
+    const page = await pageFactory();
+    try {
+      return await joinAsGuest(page, input, deadline);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (!isRetryableJoinError(lastError) || attempt >= maxAttempts) throw lastError;
+      await onRetry?.(attempt, lastError);
+    }
+  }
+  throw lastError ?? new Error("Teams guest join failed");
+}
+
+async function grantTeamsMediaPermissions(context: any, meetingUrl: string): Promise<void> {
+  if (!context || typeof context.grantPermissions !== "function") return;
+  let origin: string;
+  try {
+    origin = new URL(meetingUrl).origin;
+  } catch {
+    return;
+  }
+  await context.grantPermissions(["geolocation", "microphone", "camera"], { origin }).catch(() => undefined);
 }
 
 async function clickTeamsWebEntry(page: any, visibleTimeout = 20_000, actionTimeout = visibleTimeout): Promise<boolean> {
@@ -164,11 +224,14 @@ async function joinFromPrejoin(page: any, input: RuntimeRecorderInput, mode: Joi
 
   for (let attempt = 0; attempt < MEETING_NOT_STARTED_MAX_ATTEMPTS; attempt += 1) {
     checkJoinDeadline(deadline);
+    await throwIfTeamsBlocker(page, mode, CONTROL_PROBE_TIMEOUT_MS);
     await clickTeamsWebEntry(page, CONTROL_PROBE_TIMEOUT_MS, CONTROL_ACTION_TIMEOUT_MS);
 
+    await turnOffMediaInputs(page, CONTROL_PROBE_TIMEOUT_MS, CONTROL_ACTION_TIMEOUT_MS);
     await dismissDevicePrompts(page, CONTROL_PROBE_TIMEOUT_MS, CONTROL_ACTION_TIMEOUT_MS);
 
     filledName = (await fillAny(guestNameLocators(page), input.botName, CONTROL_PROBE_TIMEOUT_MS, CONTROL_ACTION_TIMEOUT_MS)) || filledName;
+    await turnOffMediaInputs(page, CONTROL_PROBE_TIMEOUT_MS, CONTROL_ACTION_TIMEOUT_MS);
 
     if (await clickAny(joinButtonLocators(page), CONTROL_PROBE_TIMEOUT_MS, 30_000, { suppressClickErrors: true })) {
       return waitForJoined(page, input, deadline, sawLobby);
@@ -189,8 +252,7 @@ async function joinFromPrejoin(page: any, input: RuntimeRecorderInput, mode: Joi
       return waitForJoined(page, input, deadline, sawLobby);
     }
 
-    const blocker = await prejoinBlocker(page, mode, CONTROL_PROBE_TIMEOUT_MS);
-    if (blocker) throw new Error(`${blocker} ${await prejoinDiagnostic(page)}`);
+    await throwIfTeamsBlocker(page, mode, CONTROL_PROBE_TIMEOUT_MS);
 
     if (await hasMeetingNotStartedSignals(page, CONTROL_PROBE_TIMEOUT_MS)) {
       sawMeetingNotStarted = true;
@@ -202,13 +264,17 @@ async function joinFromPrejoin(page: any, input: RuntimeRecorderInput, mode: Joi
     await waitForPoll(page, deadline);
   }
 
-  if (sawMeetingNotStarted) throw new Error(`Teams meeting did not start before the bot wait window expired. ${await prejoinDiagnostic(page)}`);
+  if (sawMeetingNotStarted) {
+    await clickCancelJoinButton(page);
+    throw new Error(`Teams meeting did not start before the bot wait window expired. ${await prejoinDiagnostic(page)}`);
+  }
   const suffix = pressedEnter ? " after pressing Enter" : "";
-  throw new Error(`Teams pre-join screen did not show a Join now button${suffix}. ${await prejoinDiagnostic(page)}`);
+  throw new TeamsJoinError(`Teams pre-join screen did not show a Join now button${suffix}. ${await prejoinDiagnostic(page)}`, true);
 }
 
 function joinButtonLocators(page: any): any[] {
   return locatorScopes(page).flatMap((scope) => [
+    scope.locator('[data-tid="prejoin-join-button"]'),
     scope.getByRole("button", { name: /join now|ask to join|join/i }),
     scope.getByRole("link", { name: /join now|ask to join|join/i }),
     scope.getByText(/^(join now|ask to join|join)$/i),
@@ -263,6 +329,13 @@ async function dismissDevicePrompts(page: any, visibleTimeout = 3_000, actionTim
   }
 }
 
+async function turnOffMediaInputs(page: any, visibleTimeout = 3_000, actionTimeout = visibleTimeout): Promise<void> {
+  for (const scope of locatorScopes(page)) {
+    await clickIfChecked(scope.locator('[data-tid="toggle-mute"]'), visibleTimeout, actionTimeout);
+    await clickIfChecked(scope.locator('[data-tid="toggle-video"]'), visibleTimeout, actionTimeout);
+  }
+}
+
 async function waitForJoined(page: any, input: RuntimeRecorderInput, deadline: JoinDeadline, sawLobby: boolean): Promise<"joined"> {
   let sawMeetingNotStarted = false;
   let emittedLobby = sawLobby;
@@ -282,6 +355,8 @@ async function waitForJoined(page: any, input: RuntimeRecorderInput, deadline: J
       continue;
     }
 
+    await throwIfTeamsBlocker(page, "guest", CONTROL_PROBE_TIMEOUT_MS);
+
     if (await hasMeetingNotStartedSignals(page, CONTROL_PROBE_TIMEOUT_MS)) {
       sawMeetingNotStarted = true;
       await waitForPoll(page, deadline);
@@ -291,7 +366,10 @@ async function waitForJoined(page: any, input: RuntimeRecorderInput, deadline: J
     if (!sawMeetingNotStarted && attempt >= PREJOIN_MAX_ATTEMPTS - 1) break;
     await waitForPoll(page, deadline);
   }
-  if (sawMeetingNotStarted) throw new Error(`Teams meeting did not start before the bot wait window expired. ${await prejoinDiagnostic(page)}`);
+  if (sawMeetingNotStarted) {
+    await clickCancelJoinButton(page);
+    throw new Error(`Teams meeting did not start before the bot wait window expired. ${await prejoinDiagnostic(page)}`);
+  }
   throw new Error("Teams did not confirm joined or waiting room state after Join now");
 }
 
@@ -303,6 +381,7 @@ async function joinedOrLobbyState(page: any, timeout: number): Promise<JoinedSta
 
 async function hasJoinedSignals(page: any, timeout: number): Promise<boolean> {
   for (const scope of locatorScopes(page)) {
+    if (await scope.locator("#callingButtons-showMoreBtn").isVisible({ timeout }).catch(() => false)) return true;
     if (await scope.getByRole("button", { name: /leave|hang up/i }).isVisible({ timeout }).catch(() => false)) return true;
     if (await scope.getByRole("button", { name: /people|participants|chat/i }).isVisible({ timeout }).catch(() => false)) return true;
     if (await scope.getByText(/you(?:'|’)re the only one here|meeting chat|participants/i).isVisible({ timeout }).catch(() => false)) return true;
@@ -329,19 +408,42 @@ async function hasMeetingNotStartedSignals(page: any, timeout: number): Promise<
   return false;
 }
 
-async function prejoinBlocker(page: any, mode: JoinMode, timeout: number): Promise<string | null> {
-  if (mode !== "guest") return null;
-  for (const scope of locatorScopes(page)) {
-    if (
-      await scope
-        .getByText(/sign in to join|join without signing in is not available|anonymous users.*(disabled|not allowed)|guest.*(disabled|not allowed)|ask your admin|not authorized/i)
-        .isVisible({ timeout })
-        .catch(() => false)
-    ) {
-      return "Teams guest join is blocked or requires sign-in.";
+async function throwIfTeamsBlocker(page: any, mode: JoinMode, timeout: number): Promise<void> {
+  if (mode === "guest") {
+    for (const scope of locatorScopes(page)) {
+      if (await scope.locator('input[name="loginfmt"][type="email"]').isVisible({ timeout }).catch(() => false)) {
+        throw new TeamsJoinError(`Microsoft login form detected. ${await prejoinDiagnostic(page)}`, false);
+      }
+      if (
+        await scope
+          .getByText(/sign in to join|join without signing in is not available|anonymous users.*(disabled|not allowed)|guest.*(disabled|not allowed)|ask your admin|not authorized|we need to verify your info|to join, sign in|sign in to teams|need to be signed in|due to org policy/i)
+          .isVisible({ timeout })
+          .catch(() => false)
+      ) {
+        throw new TeamsJoinError(`Teams guest join is blocked or requires sign-in. ${await prejoinDiagnostic(page)}`, false);
+      }
     }
   }
-  return null;
+  for (const scope of locatorScopes(page)) {
+    if (await scope.getByText(/verify you(?:'|’)re a real person/i).isVisible({ timeout }).catch(() => false)) {
+      throw new TeamsJoinError(`Teams blocked guest join with a captcha. ${await prejoinDiagnostic(page)}`, false);
+    }
+    if (await scope.getByText(/but you were denied access to the meeting|your request to join was declined/i).isVisible({ timeout }).catch(() => false)) {
+      throw new TeamsJoinError(`Someone in the meeting denied the bot request to join. ${await prejoinDiagnostic(page)}`, false);
+    }
+    if (await scope.getByText(/we couldn(?:'|’)t connect you/i).isVisible({ timeout }).catch(() => false)) {
+      throw new TeamsJoinError(`Teams could not connect the bot. ${await prejoinDiagnostic(page)}`, true);
+    }
+  }
+}
+
+async function clickCancelJoinButton(page: any): Promise<void> {
+  await clickAny(
+    locatorScopes(page).map((scope) => scope.locator('[data-tid="prejoin-cancel-button"]')),
+    CONTROL_PROBE_TIMEOUT_MS,
+    CONTROL_ACTION_TIMEOUT_MS,
+    { suppressClickErrors: true }
+  );
 }
 
 async function pressEnterFromPrejoin(page: any, visibleTimeout = 500, actionTimeout = 1_000): Promise<boolean> {
@@ -502,6 +604,15 @@ async function clickIfVisible(locator: any, visibleTimeout: number, actionTimeou
   return true;
 }
 
+async function clickIfChecked(locator: any, visibleTimeout: number, actionTimeout = visibleTimeout): Promise<boolean> {
+  const target = locator.first();
+  if (!(await target.isVisible({ timeout: visibleTimeout }).catch(() => false))) return false;
+  const checked = await target.isChecked({ timeout: visibleTimeout }).catch(() => false);
+  if (!checked) return false;
+  await target.click({ timeout: actionTimeout }).catch(() => undefined);
+  return true;
+}
+
 async function fillIfVisible(locator: any, value: string, visibleTimeout: number, actionTimeout = visibleTimeout): Promise<boolean> {
   if (!(await locator.first().isVisible({ timeout: visibleTimeout }).catch(() => false))) return false;
   await locator.first().fill(value, { timeout: actionTimeout });
@@ -638,6 +749,10 @@ function formatDurationSeconds(seconds: number): string {
   return `${seconds} second${seconds === 1 ? "" : "s"}`;
 }
 
+function isRetryableJoinError(error: Error): boolean {
+  return error instanceof TeamsJoinError ? error.retryable : true;
+}
+
 async function waitForPoll(page: any, deadline: JoinDeadline): Promise<void> {
   checkJoinDeadline(deadline);
   await page.waitForTimeout(Math.min(PREJOIN_POLL_INTERVAL_MS, remainingJoinMs(deadline)));
@@ -673,7 +788,9 @@ async function withProcessTimeout<T>(env: RuntimeProcessEnv, promise: Promise<T>
 }
 
 export const __runtimeTest = {
+  createJoinDeadline,
   fillGuestName,
   joinAsGuest,
+  joinWithRetries,
   recordBrowserAudio
 };

@@ -95,7 +95,7 @@ export async function createMeetingBot(env: WorkflowEnv, meetingId: string): Pro
   });
 }
 
-export async function monitorBotJoin(env: WorkflowEnv, meetingId: string, botId: string): Promise<void> {
+export async function monitorBotJoin(env: WorkflowEnv, meetingId: string, botId: string, attempt = 0): Promise<void> {
   const meeting = await getMeeting(env.DB, meetingId);
   if (!meeting || meeting.attendee_bot_id !== botId || !isStuckJoinState(meeting.attendee_bot_state, meeting.status)) return;
 
@@ -104,6 +104,23 @@ export async function monitorBotJoin(env: WorkflowEnv, meetingId: string, botId:
   const runtimeBot = await client.getBot(botId).catch(() => null);
   if (runtimeBot) {
     const status = mapBotStateToMeetingStatus(runtimeBot.state, runtimeBot.state === "failed" ? "fatal_error" : "state_change");
+    if (runtimeBot.latest_error) {
+      await updateMeetingBotState(env.DB, meetingId, {
+        botId,
+        state: runtimeBot.state === "failed" ? "failed" : runtimeBot.state,
+        transcriptionState: runtimeBot.transcription_state ?? (runtimeBot.state === "failed" ? "failed" : undefined),
+        recordingState: runtimeBot.recording_state ?? (runtimeBot.state === "failed" ? "failed" : undefined),
+        status: runtimeBot.state === "failed" ? "BOT_FATAL_ERROR" : status,
+        latestError: runtimeBot.latest_error
+      });
+      await createAuditLog(env.DB, {
+        eventType: runtimeBot.state === "failed" ? "bot.fatal_error" : "bot.state_changed",
+        resourceType: "meeting",
+        resourceId: meetingId,
+        metadata: { botId, source: "monitor", state: runtimeBot.state, latestError: runtimeBot.latest_error }
+      });
+      return;
+    }
     if (!isStuckJoinState(runtimeBot.state, status)) {
       await updateMeetingBotState(env.DB, meetingId, {
         botId,
@@ -123,7 +140,12 @@ export async function monitorBotJoin(env: WorkflowEnv, meetingId: string, botId:
     }
   }
 
-  const latestError = `Meeting bot remained in ${meeting.attendee_bot_state ?? "joining"} after the ${settings.attendee.maxWaitingRoomMinutes} minute waiting room timeout expired`;
+  if (attempt < 1) {
+    await env.INVITE_QUEUE.send({ type: "monitor_bot_join", meetingId, botId, attempt: attempt + 1 }, { delaySeconds: 60 });
+    return;
+  }
+
+  const latestError = monitorTimeoutError(runtimeBot?.state ?? meeting.attendee_bot_state, settings.attendee.maxWaitingRoomMinutes);
   await updateMeetingBotState(env.DB, meetingId, {
     botId,
     state: "failed",
@@ -223,6 +245,13 @@ function mapBotStateToMeetingStatus(state?: string, eventType?: string): Meeting
 function isStuckJoinState(state?: string | null, status?: MeetingRow["status"]): boolean {
   if (status && !["BOT_JOINING", "BOT_WAITING_ROOM", "BOT_CREATED", "BOT_CREATE_QUEUED"].includes(status)) return false;
   return !state || ["queued", "prejoin", "joining", "waiting_room"].includes(state);
+}
+
+function monitorTimeoutError(state: string | null | undefined, minutes: number): string {
+  if (state === "prejoin") return `Meeting bot remained on the Teams pre-join screen after the ${minutes} minute join timeout expired`;
+  if (state === "waiting_room") return `Meeting bot remained in the Teams lobby after the ${minutes} minute waiting room timeout expired`;
+  if (state === "queued") return `Meeting bot remained queued after the ${minutes} minute join timeout expired`;
+  return `Meeting bot remained in ${state ?? "joining"} after the ${minutes} minute join timeout expired`;
 }
 
 function parseJsonObject(value: string): Record<string, unknown> | null {

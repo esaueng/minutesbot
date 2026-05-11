@@ -2,6 +2,42 @@ import { describe, expect, it, vi } from "vitest";
 import { __runtimeTest } from "./runtime";
 
 describe("Teams runtime browser flow", () => {
+  it("uses exact Teams guest selectors, grants media permissions, disables media, and confirms in-meeting controls", async () => {
+    const mediaPermissions = vi.fn(async () => undefined);
+    const nameInput = visibleLocator();
+    const microphoneToggle = visibleLocator();
+    microphoneToggle.isChecked.mockResolvedValue(true);
+    const cameraToggle = visibleLocator();
+    cameraToggle.isChecked.mockResolvedValue(true);
+    const joinButton = visibleLocator(() => {
+      joined = true;
+    });
+    const showMoreButton = visibleLocator();
+    let joined = false;
+    const page = fakePage({
+      context: { grantPermissions: mediaPermissions },
+      locators: {
+        'input[data-tid="prejoin-display-name-input"]': nameInput,
+        '[data-tid="toggle-mute"]': microphoneToggle,
+        '[data-tid="toggle-video"]': cameraToggle,
+        '[data-tid="prejoin-join-button"]': joinButton,
+        "#callingButtons-showMoreBtn": showMoreButton
+      },
+      locatorsFor: (selector) => (selector === "#callingButtons-showMoreBtn" && joined ? showMoreButton : undefined)
+    });
+
+    await expect(__runtimeTest.joinAsGuest(page, guestInput())).resolves.toBe("joined");
+
+    expect(mediaPermissions).toHaveBeenCalledWith(["geolocation", "microphone", "camera"], {
+      origin: "https://teams.microsoft.com"
+    });
+    expect(nameInput.fill).toHaveBeenCalledWith("minutesbot", { timeout: 1_000 });
+    expect(microphoneToggle.click).toHaveBeenCalledWith({ timeout: 1_000 });
+    expect(cameraToggle.click).toHaveBeenCalledWith({ timeout: 1_000 });
+    expect(joinButton.click).toHaveBeenCalledWith({ timeout: 30_000 });
+    expect(showMoreButton.isVisible).toHaveBeenCalled();
+  });
+
   it("joins when Teams omits the guest display name field but still shows Join now", async () => {
     const joinButton = visibleLocator();
     const lobbyMessage = visibleLocator();
@@ -282,6 +318,47 @@ describe("Teams runtime browser flow", () => {
     await expect(__runtimeTest.joinAsGuest(page, guestInput())).rejects.toThrow("Teams guest join is blocked or requires sign-in.");
   });
 
+  it("classifies Teams captcha, denied, and connection blocker messages", async () => {
+    await expect(
+      __runtimeTest.joinAsGuest(fakePage({ texts: [{ text: "Verify you're a real person", locator: visibleLocator() }] }), guestInput())
+    ).rejects.toThrow("Teams blocked guest join with a captcha.");
+
+    await expect(
+      __runtimeTest.joinAsGuest(fakePage({ texts: [{ text: "Your request to join was declined", locator: visibleLocator() }] }), guestInput())
+    ).rejects.toThrow("Someone in the meeting denied the bot request to join.");
+
+    await expect(
+      __runtimeTest.joinAsGuest(fakePage({ texts: [{ text: "Sorry, we couldn't connect you", locator: visibleLocator() }] }), guestInput())
+    ).rejects.toThrow("Teams could not connect the bot.");
+  });
+
+  it("retries retryable pre-join failures with a fresh page factory but does not retry hard blockers", async () => {
+    const pages = [
+      fakePage(),
+      fakePage({
+        locators: { '[data-tid="prejoin-join-button"]': visibleLocator() },
+        texts: [{ text: "You're the only one here", locator: visibleLocator() }]
+      })
+    ];
+    let index = 0;
+
+    await expect(
+      __runtimeTest.joinWithRetries(
+        () => pages[index++] ?? pages.at(-1)!,
+        guestInput(),
+        __runtimeTest.createJoinDeadline(15 * 60)
+      )
+    ).resolves.toBe("joined");
+    expect(index).toBe(2);
+
+    const hardBlockerFactory = vi.fn(() => fakePage({ texts: [{ text: "Sign in to join this meeting", locator: visibleLocator() }] }));
+    await expect(
+      __runtimeTest.joinWithRetries(hardBlockerFactory, guestInput(), __runtimeTest.createJoinDeadline(15 * 60))
+    ).rejects.toThrow("Teams guest join is blocked or requires sign-in.");
+    expect(hardBlockerFactory).toHaveBeenCalledTimes(1);
+  });
+
+
   it("clicks Teams join controls exposed only through raw selector attributes", async () => {
     const joinButton = visibleLocator();
     const lobbyMessage = visibleLocator();
@@ -486,10 +563,12 @@ type FakeControl = {
 
 type FakePageInput = {
   locators?: FakeLocatorMap | (() => FakeLocatorMap);
+  locatorsFor?: (selector: string) => FakeLocator | undefined;
   roles?: Array<{ role: string; name: string; locator: FakeLocator }> | (() => Array<{ role: string; name: string; locator: FakeLocator }>);
   texts?: Array<{ text: string; locator: FakeLocator }> | (() => Array<{ text: string; locator: FakeLocator }>);
   frames?: unknown[] | (() => unknown[]);
   url?: string;
+  context?: { grantPermissions?: ReturnType<typeof vi.fn> };
   controls?: FakeControl[] | (() => FakeControl[]);
   bodyText?: string | (() => string);
   readyState?: string | (() => string);
@@ -507,7 +586,8 @@ function fakePage(input: FakePageInput = {}) {
     getByText: vi.fn((pattern: RegExp) => {
       return current(input.texts, []).find((entry) => pattern.test(entry.text))?.locator ?? invisible;
     }),
-    locator: vi.fn((selector: string) => current(input.locators, {})[selector] ?? invisible),
+    locator: vi.fn((selector: string) => input.locatorsFor?.(selector) ?? current(input.locators, {})[selector] ?? invisible),
+    context: vi.fn(() => input.context ?? {}),
     frames: input.frames ? vi.fn(() => current(input.frames, [])) : undefined,
     url: vi.fn(() => input.url ?? "https://teams.microsoft.com/l/meetup-join/test?context=secret"),
     evaluate: vi.fn(async (fn?: () => unknown) => {
