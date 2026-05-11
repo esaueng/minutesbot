@@ -22,13 +22,7 @@ export function MeetingDetail({ id }: { id: string }) {
       </header>
       <section>
         <h2>Controls</h2>
-        <div className="actions">
-          <Action label="Retry bot" run={() => apiPost(`/api/meetings/${id}/retry-bot`)} done={load} />
-          <Action label="Fetch transcript" run={() => apiPost(`/api/meetings/${id}/fetch-transcript`)} done={load} />
-          <Action label="Retry summary" run={() => apiPost(`/api/meetings/${id}/retry-summary`)} done={load} />
-          <Action label="Delete artifacts" run={() => apiDelete(`/api/meetings/${id}/artifacts`)} done={load} />
-          <Action label="Delete bot runtime data" run={() => apiPost(`/api/meetings/${id}/delete-bot-data`)} done={load} />
-        </div>
+        <MeetingControls id={id} meeting={meeting} reload={load} setMessage={setMessage} />
         {message && <p>{message}</p>}
       </section>
       <section>
@@ -65,8 +59,84 @@ function Metric({ label, value }: { label: string; value: string }) {
   return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;
 }
 
-function Action({ label, run, done }: { label: string; run: () => Promise<unknown>; done: () => void }) {
-  return <button onClick={async () => { await run(); done(); }}>{label}</button>;
+export function MeetingControls({
+  id,
+  meeting,
+  reload,
+  setMessage
+}: {
+  id: string;
+  meeting: Record<string, unknown>;
+  reload: () => void;
+  setMessage: (message: string) => void;
+}) {
+  const canForceEnd = hasActiveBotRecording(meeting);
+  return (
+    <div className="actions">
+      <Action label="Retry bot" run={() => apiPost(`/api/meetings/${id}/retry-bot`)} done={reload} setMessage={setMessage} />
+      {canForceEnd ? (
+        <Action
+          label="Force end recording"
+          className="dangerButton"
+          run={() => apiPost(`/api/meetings/${id}/force-end-recording`)}
+          done={() => {
+            setMessage("Force end requested.");
+            reload();
+          }}
+          setMessage={setMessage}
+        />
+      ) : null}
+      <Action label="Fetch transcript" run={() => apiPost(`/api/meetings/${id}/fetch-transcript`)} done={reload} setMessage={setMessage} />
+      <Action label="Retry summary" run={() => apiPost(`/api/meetings/${id}/retry-summary`)} done={reload} setMessage={setMessage} />
+      <Action label="Delete artifacts" run={() => apiDelete(`/api/meetings/${id}/artifacts`)} done={reload} setMessage={setMessage} />
+      <Action label="Delete bot runtime data" run={() => apiPost(`/api/meetings/${id}/delete-bot-data`)} done={reload} setMessage={setMessage} />
+    </div>
+  );
+}
+
+function Action({
+  label,
+  run,
+  done,
+  setMessage,
+  className
+}: {
+  label: string;
+  run: () => Promise<unknown>;
+  done: () => void;
+  setMessage: (message: string) => void;
+  className?: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      className={className}
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        setMessage("");
+        try {
+          await run();
+          done();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Action failed");
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {busy ? "Working..." : label}
+    </button>
+  );
+}
+
+function hasActiveBotRecording(meeting: Record<string, unknown>): boolean {
+  if (!meeting.attendee_bot_id) return false;
+  const state = String(meeting.attendee_bot_state ?? "");
+  const status = String(meeting.status ?? "");
+  if (["ended", "failed", "cancelled"].includes(state)) return false;
+  if (["CANCELLED", "BOT_ENDED", "SUMMARY_SENT", "BOT_FATAL_ERROR", "FAILED"].includes(status)) return false;
+  return true;
 }
 
 type DisplaySummary = {

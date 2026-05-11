@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeBotLogs, normalizeSummaryForDisplay, summarizeArtifacts } from "./MeetingDetail";
+import { MeetingControls, normalizeBotLogs, normalizeSummaryForDisplay, summarizeArtifacts } from "./MeetingDetail";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BotStatePanel } from "../components/BotStatePanel";
@@ -217,6 +217,40 @@ describe("meeting detail recap display", () => {
 });
 
 describe("meeting bot state display", () => {
+  it("shows a force end recording control for active meeting bots", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(MeetingControls, {
+        id: "mtg_1",
+        meeting: {
+          attendee_bot_id: "bot_1",
+          attendee_bot_state: "recording",
+          status: "BOT_RECORDING"
+        },
+        reload: () => undefined,
+        setMessage: () => undefined
+      })
+    );
+
+    expect(html).toContain("Force end recording");
+  });
+
+  it("hides the force end recording control after the bot reaches a terminal state", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(MeetingControls, {
+        id: "mtg_1",
+        meeting: {
+          attendee_bot_id: "bot_1",
+          attendee_bot_state: "ended",
+          status: "BOT_ENDED"
+        },
+        reload: () => undefined,
+        setMessage: () => undefined
+      })
+    );
+
+    expect(html).not.toContain("Force end recording");
+  });
+
   it("shows the latest bot error and last event timestamp beside the bot state", () => {
     const html = renderToStaticMarkup(
       React.createElement(BotStatePanel, {

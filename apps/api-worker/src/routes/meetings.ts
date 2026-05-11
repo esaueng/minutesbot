@@ -1,9 +1,11 @@
 import { Hono } from "hono";
-import { getLatestSummary, getMeeting, listArtifacts, listEmailDeliveries, listMeetingAttendees, listMeetings, listTranscriptSegments, listWebhookEvents, updateMeetingStatus } from "@minutesbot/db";
+import { BotClient } from "@minutesbot/bot-client";
+import { createAuditLog, getLatestSummary, getMeeting, listArtifacts, listEmailDeliveries, listMeetingAttendees, listMeetings, listTranscriptSegments, listWebhookEvents, updateMeetingBotState, updateMeetingStatus } from "@minutesbot/db";
 import { AppError } from "@minutesbot/shared";
 import type { Env } from "../env";
 import { deleteMeetingArtifacts, deleteMeetingHistory } from "../services/artifactService";
 import { eligibleRecipientCount } from "../services/meetingService";
+import { readSettings } from "../services/settingsService";
 
 export const meetingsRoute = new Hono<{ Bindings: Env }>()
   .get("/", async (c) => {
@@ -44,6 +46,58 @@ export const meetingsRoute = new Hono<{ Bindings: Env }>()
     await c.env.SUMMARY_QUEUE.send({ type: "fetch_transcript", meetingId: c.req.param("id") });
     return c.json({ ok: true });
   })
+  .post("/:id/force-end-recording", async (c) => {
+    const id = c.req.param("id");
+    const meeting = await getMeeting(c.env.DB, id);
+    if (!meeting) throw new AppError("NOT_FOUND", "Meeting not found", 404);
+    const botId = meeting.attendee_bot_id;
+    if (!botId) throw new AppError("BOT_NOT_FOUND", "Meeting does not have a bot recording to end.", 409);
+    if (isTerminalBotState(meeting.attendee_bot_state, meeting.status)) {
+      return c.json({ ok: true, alreadyEnded: true, bot: { id: botId, state: meeting.attendee_bot_state } });
+    }
+
+    await createAuditLog(c.env.DB, {
+      eventType: "bot.cancel_requested",
+      resourceType: "meeting",
+      resourceId: id,
+      metadata: { botId, reason: "force_end_recording" }
+    });
+    const settings = await readSettings(c.env);
+    const client = new BotClient({
+      baseUrl: settings.attendee.baseUrl,
+      internalToken: c.env.BOT_INTERNAL_TOKEN,
+      fetcher: c.env.BOT_RUNTIME ? (input, init) => c.env.BOT_RUNTIME!.fetch(input, init) : undefined
+    });
+
+    try {
+      const bot = await client.cancelBot(botId);
+      await updateMeetingBotState(c.env.DB, id, {
+        botId,
+        state: bot.state,
+        transcriptionState: bot.transcription_state,
+        recordingState: bot.recording_state,
+        status: mapBotStateToMeetingStatus(bot.state, bot.state === "cancelled" ? "cancelled" : "cancel_requested"),
+        latestError: bot.latest_error
+      });
+      await createAuditLog(c.env.DB, {
+        eventType: "bot.cancelled",
+        resourceType: "meeting",
+        resourceId: id,
+        metadata: { botId, reason: "force_end_recording", state: bot.state }
+      });
+      return c.json({ ok: true, bot });
+    } catch (error) {
+      const latestError = error instanceof Error ? error.message : String(error);
+      await updateMeetingBotState(c.env.DB, id, { botId, status: "BOT_LEAVING", latestError });
+      await createAuditLog(c.env.DB, {
+        eventType: "bot.cancel_failed",
+        resourceType: "meeting",
+        resourceId: id,
+        metadata: { botId, reason: "force_end_recording", error: latestError }
+      });
+      throw error;
+    }
+  })
   .post("/:id/delete-bot-data", async (c) => {
     await c.env.SUMMARY_QUEUE.send({ type: "delete_attendee_data", meetingId: c.req.param("id") });
     return c.json({ ok: true });
@@ -68,6 +122,19 @@ function latestWebhookError(events: Array<{ attendee_bot_id?: string | null; pay
     if (typeof data?.latest_error === "string" && data.latest_error.trim()) return data.latest_error;
   }
   return null;
+}
+
+function mapBotStateToMeetingStatus(state?: string, eventType?: string) {
+  if (eventType === "cancelled" || state === "cancelled") return "CANCELLED";
+  if (eventType === "cancel_requested" || state === "cancelling") return "BOT_LEAVING";
+  if (state === "failed" || state?.includes("fatal") || state?.includes("error")) return "BOT_FATAL_ERROR";
+  if (state === "ended") return "BOT_ENDED";
+  return undefined;
+}
+
+function isTerminalBotState(state?: string | null, status?: string | null): boolean {
+  if (status && ["CANCELLED", "BOT_ENDED", "SUMMARY_SENT", "BOT_FATAL_ERROR", "FAILED"].includes(status)) return true;
+  return state === "ended" || state === "failed" || state === "cancelled";
 }
 
 function parseJsonObject(value: string): Record<string, unknown> | null {

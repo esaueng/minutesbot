@@ -133,6 +133,52 @@ class RetriedMeetingDetailD1 {
   }
 }
 
+class ActiveBotMeetingD1 {
+  updates: unknown[][] = [];
+  audits: Array<{ eventType: string; metadata: string | null }> = [];
+
+  prepare(sql: string) {
+    const db = this;
+    return {
+      values: [] as unknown[],
+      bind(...values: unknown[]) {
+        this.values = values;
+        return this;
+      },
+      async first() {
+        if (sql.includes("FROM meetings WHERE id")) {
+          return {
+            id: this.values[0],
+            calendar_uid: "teams-link-1",
+            subject: "Active recording",
+            status: "BOT_RECORDING",
+            attendee_bot_id: "bot_active",
+            attendee_bot_state: "recording",
+            attendee_transcription_state: "pending",
+            attendee_recording_state: "recording",
+            latest_error: null,
+            transcript_status: "not_started",
+            summary_status: "not_started",
+            created_at: "2026-05-10T03:26:00.000Z",
+            updated_at: "2026-05-10T03:26:00.000Z"
+          };
+        }
+        return null;
+      },
+      async run() {
+        if (sql.includes("UPDATE meetings")) db.updates.push(this.values);
+        if (sql.includes("INSERT INTO audit_logs")) {
+          db.audits.push({ eventType: String(this.values[2]), metadata: this.values[5] == null ? null : String(this.values[5]) });
+        }
+        return { success: true };
+      },
+      async all() {
+        return { results: [] };
+      }
+    };
+  }
+}
+
 class DeleteMeetingD1 {
   deletedTables: string[] = [];
 
@@ -285,6 +331,52 @@ describe("api worker", () => {
 
     expect(response.status).toBe(200);
     expect(send).toHaveBeenCalledWith({ type: "fetch_transcript", meetingId: "mtg_1" });
+  });
+
+  it("force-ends an active meeting bot recording through the managed runtime", async () => {
+    const db = new ActiveBotMeetingD1();
+    const runtimeFetch = vi.fn(async (input: string | URL | Request) => {
+      expect(String(input)).toBe("https://meeting-api.minutes.bot/api/v1/bots/bot_active/cancel");
+      return Response.json({
+        id: "bot_active",
+        meeting_url: "https://teams.microsoft.com/l/meetup-join/abc",
+        state: "cancelling",
+        recording_state: "recording",
+        transcription_state: "pending"
+      });
+    });
+
+    const response = await app.request(
+      "/api/meetings/mtg_1/force-end-recording",
+      { method: "POST", headers: { authorization: "Bearer test-secret" } },
+      {
+        DB: db as unknown as D1Database,
+        ARTIFACTS: {} as R2Bucket,
+        INVITE_QUEUE: { send: vi.fn() },
+        SUMMARY_QUEUE: { send: vi.fn() },
+        EMAIL_QUEUE: { send: vi.fn() },
+        BOT_API_BASE_URL: "https://meeting-api.minutes.bot",
+        BOT_INTERNAL_TOKEN: "managed-token",
+        BOT_RUNTIME: { fetch: runtimeFetch } as unknown as Fetcher,
+        SESSION_SECRET: "test-secret"
+      }
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      bot: { id: "bot_active", state: "cancelling" }
+    });
+    expect(runtimeFetch).toHaveBeenCalledWith(
+      "https://meeting-api.minutes.bot/api/v1/bots/bot_active/cancel",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ authorization: "Bearer managed-token" })
+      })
+    );
+    expect(db.updates.at(-1)).toEqual(expect.arrayContaining(["bot_active", "cancelling", "pending", "recording", "BOT_LEAVING"]));
+    expect(db.audits.map((audit) => audit.eventType)).toEqual(["bot.cancel_requested", "bot.cancelled"]);
+    expect(db.audits[0]?.metadata).toContain("force_end_recording");
   });
 
   it("removes a meeting from history and deletes associated R2 objects", async () => {
