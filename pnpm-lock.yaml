@@ -99,6 +99,9 @@ importers:
 
   apps/bot-runtime:
     dependencies:
+      '@minutesbot/invite-parser':
+        specifier: workspace:*
+        version: link:../../packages/invite-parser
       '@minutesbot/shared':
         specifier: workspace:*
         version: link:../../packages/shared
