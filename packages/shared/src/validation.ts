@@ -138,7 +138,10 @@ export const appSettingsSchema = z.object({
     provider: z.enum(["cloudflare-email-service", "smtp", "mock"]),
     senderName: headerSafeString(120).default(defaultEmailSenderName),
     senderEmail: z.string().trim().email().transform((value) => value.toLowerCase()),
-    testRecipient: z.string().trim().email().optional().or(z.literal(""))
+    testRecipient: z.string().trim().email().optional().or(z.literal("")),
+    // HTTP bridge endpoint for the "smtp" provider; without it that provider
+    // cannot deliver anything.
+    smtpEndpoint: z.string().trim().url().optional().or(z.literal(""))
   }),
   policy: z.object({
     sendToAllowedDomainsOnly: z.literal(true),
@@ -217,7 +220,8 @@ export const defaultSettings: AppSettings = {
     provider: "mock",
     senderName: defaultEmailSenderName,
     senderEmail: "notetaker@minutes.bot",
-    testRecipient: defaultSampleRecapRecipient
+    testRecipient: defaultSampleRecapRecipient,
+    smtpEndpoint: ""
   },
   policy: {
     sendToAllowedDomainsOnly: true,

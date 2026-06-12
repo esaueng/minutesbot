@@ -206,6 +206,14 @@ export async function listMeetingAttendees(db: D1Database, meetingId: string): P
   return result.results ?? [];
 }
 
+/** Eligible-recipient counts for all meetings in one query (avoids N+1 on the meeting list). */
+export async function countEligibleRecipientsByMeeting(db: D1Database): Promise<Map<string, number>> {
+  const result = await db
+    .prepare("SELECT meeting_id, COUNT(*) AS eligible_count FROM attendees WHERE summary_eligible = 1 GROUP BY meeting_id")
+    .all<{ meeting_id: string; eligible_count: number }>();
+  return new Map((result.results ?? []).map((row) => [row.meeting_id, row.eligible_count]));
+}
+
 export async function listTranscriptSegments(db: D1Database, meetingId: string): Promise<TranscriptSegmentRow[]> {
   const result = await db.prepare("SELECT * FROM transcript_segments WHERE meeting_id = ? ORDER BY timestamp_ms ASC").bind(meetingId).all<TranscriptSegmentRow>();
   return result.results ?? [];

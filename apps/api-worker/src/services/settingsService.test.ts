@@ -43,7 +43,6 @@ function env(overrides: Partial<Env> = {}): Env {
     ARTIFACTS: {} as R2Bucket,
     INVITE_QUEUE: { send: async () => undefined },
     SUMMARY_QUEUE: { send: async () => undefined },
-    EMAIL_QUEUE: { send: async () => undefined },
     APP_BASE_URL: "https://minutesbot.example.com",
     API_BASE_URL: "https://minutesbot.example.com",
     BOT_API_BASE_URL: "https://meeting-bot.example.com",

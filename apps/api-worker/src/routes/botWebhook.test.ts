@@ -411,7 +411,6 @@ function env(db: WebhookD1, summaryQueue: { send: ReturnType<typeof vi.fn> }) {
     ARTIFACTS: {} as R2Bucket,
     INVITE_QUEUE: { send: vi.fn() },
     SUMMARY_QUEUE: summaryQueue,
-    EMAIL_QUEUE: { send: vi.fn() },
     BOT_INTERNAL_TOKEN: "managed-token",
     SESSION_SECRET: "test-secret"
   };

@@ -27,7 +27,7 @@ function normalizeSummary(summary: SummaryEmailSummary): Required<Pick<SummaryEm
 
 function renderText(input: SummaryEmailInput & { summary: ReturnType<typeof normalizeSummary> }, meetingTypeLabel: string, recapDepthLabel: string): string {
   const secondarySections = resolveSecondarySections(input, isLegacyOnly(input.summary));
-  const displayDate = input.date ? formatMeetingDate(input.date) : "";
+  const displayDate = input.date ? formatMeetingDate(input.date, input.timeZone) : "";
   return [
     aiDisclaimer,
     "",
@@ -80,7 +80,7 @@ function renderHtml(input: SummaryEmailInput & { summary: ReturnType<typeof norm
 }
 
 function renderHeader(input: SummaryEmailInput & { summary: ReturnType<typeof normalizeSummary> }, meetingTypeLabel: string): string {
-  const displayDate = input.date ? formatMeetingDate(input.date) : "";
+  const displayDate = input.date ? formatMeetingDate(input.date, input.timeZone) : "";
   return [
     '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;margin:0 0 4px;">',
     "<tr>",
@@ -224,18 +224,24 @@ function transcriptExpirationText(hours = defaultTranscriptDownloadExpirationHou
   return `This transcript link expires after ${hours} ${hours === 1 ? "hour" : "hours"}.`;
 }
 
-function formatMeetingDate(value: string): string {
+function formatMeetingDate(value: string, timeZone = "UTC"): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "UTC",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZoneName: "short"
-  }).format(date);
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short"
+    }).format(date);
+  } catch {
+    // An invalid configured time zone falls back to UTC rather than failing
+    // the entire recap email.
+    return formatMeetingDate(value, "UTC");
+  }
 }
 
 function escapeHtml(value: string): string {
