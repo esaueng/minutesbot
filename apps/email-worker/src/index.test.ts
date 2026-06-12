@@ -17,8 +17,8 @@ class FakeD1 {
     const db = this;
     return {
       values: [] as unknown[],
-      bind() {
-        this.values = Array.from(arguments);
+      bind(...values: unknown[]) {
+        this.values = values;
         return this;
       },
       async first() {

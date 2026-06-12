@@ -54,7 +54,7 @@ function renderText(input: SummaryEmailInput & { summary: ReturnType<typeof norm
     .join("\n");
 }
 
-function renderHtml(input: SummaryEmailInput & { summary: ReturnType<typeof normalizeSummary> }, meetingTypeLabel: string, recapDepthLabel: string): string {
+function renderHtml(input: SummaryEmailInput & { summary: ReturnType<typeof normalizeSummary> }, meetingTypeLabel: string, _recapDepthLabel: string): string {
   const secondarySections = resolveSecondarySections(input, isLegacyOnly(input.summary));
   return [
     '<meta name="color-scheme" content="light only">',
@@ -66,7 +66,7 @@ function renderHtml(input: SummaryEmailInput & { summary: ReturnType<typeof norm
     '<div style="padding:14px 20px 20px;background:#ffffff;background-color:#ffffff;color:#111827;">',
     renderHeader(input, meetingTypeLabel),
     callout(aiDisclaimer),
-    input.summary.recapDepth === "brief" ? callout("Brief meeting detected<br><span style=\"font-weight:650;\">This recap is simplified because the meeting or captured transcript was very short.</span>", "#eef2ff", "#4338ca", "#312e81") : "",
+    input.summary.recapDepth === "brief" ? calloutHtml("Brief meeting detected<br><span style=\"font-weight:650;\">This recap is simplified because the meeting or captured transcript was very short.</span>", "#eef2ff", "#4338ca", "#312e81") : "",
     input.recap?.introText ? paragraph(input.recap.introText, "margin:15px 0 0;font-size:15px;line-height:1.55;color:#374151;") : "",
     sectionHeading("Meeting notes"),
     renderMeetingNotesHtml(input.summary.meetingNotes),
@@ -209,7 +209,12 @@ function badge(value: string, background = "#ede9fe", color = "#4c1d95"): string
 }
 
 function callout(value: string, background = "#fff7ed", border = "#c2410c", color = "#7c2d12"): string {
-  return `<div style="margin:15px 0 0;padding:11px 13px;border-left:4px solid ${border};background:${background};background-color:${background};font-size:15px;line-height:1.5;color:${color};font-weight:800;">${value}</div>`;
+  return calloutHtml(escapeHtml(value), background, border, color);
+}
+
+/** Only for trusted constant markup; dynamic content must go through callout(). */
+function calloutHtml(html: string, background = "#fff7ed", border = "#c2410c", color = "#7c2d12"): string {
+  return `<div style="margin:15px 0 0;padding:11px 13px;border-left:4px solid ${border};background:${background};background-color:${background};font-size:15px;line-height:1.5;color:${color};font-weight:800;">${html}</div>`;
 }
 
 function paragraph(value: string, style: string): string {
