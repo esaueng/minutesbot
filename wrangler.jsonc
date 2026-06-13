@@ -43,7 +43,7 @@
     "DEFAULT_RECORDER_EMAIL": "notetaker@wgs.bot",
     "DEFAULT_SENDER_EMAIL": "notetaker@wgs.bot",
     "ENVIRONMENT": "production",
-    "ALLOW_ADMIN_TOKEN_AUTH": "false"
+    "ALLOW_ADMIN_TOKEN_AUTH": "true"
   },
   "d1_databases": [
     {
