@@ -20,7 +20,7 @@
   "workers_dev": false,
   "routes": [
     {
-      "pattern": "meeting-api.example.com",
+      "pattern": "minutesbot-meeting-api.wgsglobal.app",
       "custom_domain": true
     }
   ],
@@ -29,9 +29,9 @@
     // Overridden with fresh values on every `pnpm bot:deploy`.
     "BOT_CONTAINER_INSTANCE_ID": "dev",
     "BOT_RUNTIME_VERSION": "dev",
-    "BOT_API_BASE_URL": "https://meeting-api.example.com",
+    "BOT_API_BASE_URL": "https://minutesbot-meeting-api.wgsglobal.app",
     "BOT_RECORDING_BUCKET_NAME": "minutesbot-artifacts",
-    "BOT_WEBHOOK_BASE_URL": "https://meeting.example.com"
+    "BOT_WEBHOOK_BASE_URL": "https://minutesbot-webhook.wgsglobal.app"
   },
   "r2_buckets": [
     {
