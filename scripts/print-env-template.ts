@@ -1,17 +1,25 @@
-import { REQUIRED_ENV_KEYS } from "./deploy-oneshot";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
-const DEFAULT_VALUES: Partial<Record<(typeof REQUIRED_ENV_KEYS)[number], string>> = {
-  CLOUDFLARE_ENV: "production",
-  APP_BASE_URL: "https://app.minutes.bot",
-  API_BASE_URL: "https://api.minutes.bot",
-  BOT_WEBHOOK_BASE_URL: "https://meeting.minutes.bot",
-  BOT_API_BASE_URL: "https://meeting-api.minutes.bot",
-  BOT_RECORDING_BUCKET_NAME: "minutesbot-artifacts",
-  DEFAULT_RECORDER_EMAIL: "notetaker@minutes.bot",
-  DEFAULT_SENDER_EMAIL: "notetaker@minutes.bot",
-  CLOUDFLARE_ACCESS_JWKS_URL: "https://<team-name>.cloudflareaccess.com/cdn-cgi/access/certs"
-};
+/**
+ * Prints the .env template. The checked-in .env.example is the single source
+ * of truth; this command exists so `pnpm env:template > .env` works without
+ * hunting for the file.
+ */
+export async function printEnvTemplate(options: {
+  readTextFile?: (path: string) => Promise<string>;
+  log?: (message: string) => void;
+} = {}): Promise<void> {
+  const readTextFile = options.readTextFile ?? ((path: string) => readFile(path, "utf8"));
+  const log = options.log ?? console.log;
+  log((await readTextFile(".env.example")).trimEnd());
+}
 
-const lines = REQUIRED_ENV_KEYS.map((key) => `${key}=${DEFAULT_VALUES[key] ?? ""}`);
+const isCli = process.argv[1] === fileURLToPath(import.meta.url);
 
-console.log(["# minutesbot Cloudflare Worker", ...lines].join("\n"));
+if (isCli) {
+  printEnvTemplate().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

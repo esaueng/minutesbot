@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getSettings, saveSettings } from "@minutesbot/db";
-import { AppError, parseSettings, resolveBotBaseUrl, type AppSettings } from "@minutesbot/shared";
+import { AppError, parseSettings, type AppSettings } from "@minutesbot/shared";
 import type { Env } from "../env";
 
 const botImageContentTypes = new Set(["image/png", "image/jpeg"]);
@@ -12,34 +12,45 @@ const botImageInputSchema = z.object({
   fileName: z.string().max(255).optional()
 });
 
-export async function readSettings(env: Env): Promise<AppSettings> {
+export type SettingsView = {
+  settings: AppSettings;
+  /** Presence flags only — secret values never leave the worker. */
+  secrets: {
+    aiKeyConfigured: boolean;
+    transcriptionKeyConfigured: boolean;
+    botInternalTokenConfigured: boolean;
+    sessionSecretConfigured: boolean;
+  };
+};
+
+export async function readSettings(env: Env): Promise<SettingsView> {
   const settings = await getSettings(env.DB);
   return {
-    ...settings,
-    attendee: {
-      ...settings.attendee,
-      baseUrl: resolveBotBaseUrl(settings.attendee.baseUrl, env.BOT_API_BASE_URL)
+    settings: {
+      ...settings,
+      transcription: { ...settings.transcription, apiKeyConfigured: Boolean(env.TRANSCRIPTION_API_KEY ?? env.AI_API_KEY) },
+      recap: { ...settings.recap, apiKeyConfigured: Boolean(env.AI_API_KEY) }
     },
-    ai: {
-      ...settings.ai,
-      apiKeyConfigured: Boolean(env.AI_API_KEY)
+    secrets: {
+      aiKeyConfigured: Boolean(env.AI_API_KEY),
+      transcriptionKeyConfigured: Boolean(env.TRANSCRIPTION_API_KEY ?? env.AI_API_KEY),
+      botInternalTokenConfigured: Boolean(env.BOT_INTERNAL_TOKEN),
+      sessionSecretConfigured: Boolean(env.SESSION_SECRET)
     }
   };
 }
 
-export async function writeSettings(env: Env, input: unknown): Promise<AppSettings> {
+export async function writeSettings(env: Env, input: unknown): Promise<SettingsView> {
   const parsed = parseSettings(input);
   await saveSettings(env.DB, {
     ...parsed,
-    ai: {
-      ...parsed.ai,
-      apiKeyConfigured: false
-    }
+    transcription: { ...parsed.transcription, apiKeyConfigured: false },
+    recap: { ...parsed.recap, apiKeyConfigured: false }
   });
   return readSettings(env);
 }
 
-export async function uploadBotImage(env: Env, rawInput: unknown): Promise<AppSettings> {
+export async function uploadBotImage(env: Env, rawInput: unknown): Promise<SettingsView> {
   const parsedInput = botImageInputSchema.safeParse(rawInput);
   if (!parsedInput.success) {
     throw new AppError("INVALID_BOT_IMAGE", "Bot image upload payload is invalid.");
@@ -66,9 +77,9 @@ export async function uploadBotImage(env: Env, rawInput: unknown): Promise<AppSe
   const current = await getSettings(env.DB);
   await saveSettings(env.DB, {
     ...current,
-    attendee: {
-      ...current.attendee,
-      botImage: {
+    bot: {
+      ...current.bot,
+      image: {
         r2Key,
         contentType: input.contentType as "image/png" | "image/jpeg",
         fileName: input.fileName,

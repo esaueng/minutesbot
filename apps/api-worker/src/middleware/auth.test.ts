@@ -4,8 +4,8 @@ import { adminTokenAuthMiddleware, createAuthMiddleware, isPublicApiPath } from 
 import { clearCloudflareAccessJwksCacheForTests, verifyCloudflareAccessJwt } from "./cloudflareAccess";
 
 const ACCESS_AUD = "13f67694a98579897f6175043bb595df17afdfd5129d44c33e8b937b5576ae71";
-const ACCESS_ISSUER = "https://esau.cloudflareaccess.com";
-const ACCESS_JWKS_URL = "https://esau.cloudflareaccess.com/cdn-cgi/access/certs";
+const ACCESS_ISSUER = "https://example.cloudflareaccess.com";
+const ACCESS_JWKS_URL = "https://example.cloudflareaccess.com/cdn-cgi/access/certs";
 
 describe("auth middleware", () => {
   afterEach(() => {
@@ -15,7 +15,7 @@ describe("auth middleware", () => {
   it("leaves health and meeting bot webhook routes public", () => {
     expect(isPublicApiPath("/api/health")).toBe(true);
     expect(isPublicApiPath("/api/webhooks/bot")).toBe(true);
-    expect(isPublicApiPath("/api/webhooks/attendee")).toBe(true);
+    expect(isPublicApiPath("/api/ready")).toBe(true);
     expect(isPublicApiPath("/api/settings")).toBe(false);
   });
 

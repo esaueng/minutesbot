@@ -136,6 +136,9 @@ importers:
       '@minutesbot/recipient-policy':
         specifier: workspace:*
         version: link:../../packages/recipient-policy
+      '@minutesbot/scheduler':
+        specifier: workspace:*
+        version: link:../../packages/scheduler
       '@minutesbot/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -176,12 +179,18 @@ importers:
       '@minutesbot/recipient-policy':
         specifier: workspace:*
         version: link:../../packages/recipient-policy
+      '@minutesbot/scheduler':
+        specifier: workspace:*
+        version: link:../../packages/scheduler
       '@minutesbot/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@minutesbot/summary-engine':
         specifier: workspace:*
         version: link:../../packages/summary-engine
+      '@minutesbot/transcription':
+        specifier: workspace:*
+        version: link:../../packages/transcription
 
   deploy/bot-container:
     dependencies:
@@ -220,11 +229,35 @@ importers:
         specifier: workspace:*
         version: link:../summary-engine
 
-  packages/email-sender: {}
+  packages/email-sender:
+    dependencies:
+      '@minutesbot/recipient-policy':
+        specifier: workspace:*
+        version: link:../recipient-policy
 
   packages/invite-parser: {}
 
   packages/recipient-policy: {}
+
+  packages/recurrence: {}
+
+  packages/scheduler:
+    dependencies:
+      '@minutesbot/db':
+        specifier: workspace:*
+        version: link:../db
+      '@minutesbot/invite-parser':
+        specifier: workspace:*
+        version: link:../invite-parser
+      '@minutesbot/recipient-policy':
+        specifier: workspace:*
+        version: link:../recipient-policy
+      '@minutesbot/recurrence':
+        specifier: workspace:*
+        version: link:../recurrence
+      '@minutesbot/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/shared:
     dependencies:
@@ -233,6 +266,12 @@ importers:
         version: 3.25.76
 
   packages/summary-engine:
+    dependencies:
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
+  packages/transcription:
     dependencies:
       zod:
         specifier: ^3.24.1

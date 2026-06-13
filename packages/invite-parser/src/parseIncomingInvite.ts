@@ -2,8 +2,8 @@ import { AppError } from "@minutesbot/shared";
 import { extractTeamsJoinUrl } from "./extractTeamsJoinUrl";
 import { decodeMimeWords, extractCalendarText, extractTextBody, parseHeaderBlock, splitMessage } from "./mime";
 import { normalizeAttendees } from "./normalizeAttendees";
-import { parseIcsCalendar } from "./parseIcs";
-import type { NormalizedAttendee, ParsedMeetingInvite, RawIcsAttendee } from "./types";
+import { parseCalendar } from "./parseIcs";
+import type { NormalizedAttendee, ParsedMeetingInvite, ParsedVEvent, RawIcsAttendee } from "./types";
 
 export function parseIncomingInvite(rawEmail: string): ParsedMeetingInvite {
   const { headerText } = splitMessage(rawEmail);
@@ -20,21 +20,25 @@ export function parseIncomingInvite(rawEmail: string): ParsedMeetingInvite {
     return parseLinkOnlyInvite({ headers, body, rawRecipient, rawSender });
   }
 
-  const calendar = parseIcsCalendar(calendarText);
-  const teamsJoinUrl = extractTeamsJoinUrl(`${calendar.description ?? ""}\n${calendar.location ?? ""}\n${body}`);
+  const calendar = parseCalendar(calendarText);
+  // The primary event is the series master (no RECURRENCE-ID) when present,
+  // otherwise the first event in the file.
+  const primary = calendar.events.find((event) => !event.recurrenceId) ?? calendar.events[0];
+  const teamsJoinUrl = extractTeamsJoinUrl(`${primary.description ?? ""}\n${primary.location ?? ""}\n${body}`);
   // Cancellations are matched to the stored meeting by UID, so a missing
   // join URL must not reject them — otherwise the bot attends cancelled
   // meetings whose CANCEL payload omitted the link.
-  if (!teamsJoinUrl && calendar.kind === "request") {
+  if (!teamsJoinUrl && primary.kind === "request") {
     throw new AppError("REJECTED_NO_TEAMS_LINK", "Meeting invite does not contain a Microsoft Teams join URL", 400);
   }
 
   return {
-    ...calendar,
-    attendees: mergeAttendees(calendar.attendees, headerAttendees(headers)),
+    ...primary,
+    attendees: mergeAttendees(primary.attendees, headerAttendees(headers)),
     teamsJoinUrl,
     rawRecipient: rawRecipient.toLowerCase(),
-    rawSender: rawSender.toLowerCase()
+    rawSender: rawSender.toLowerCase(),
+    events: calendar.events
   };
 }
 
@@ -46,17 +50,21 @@ function parseLinkOnlyInvite(input: { headers: Map<string, string>; body: string
 
   const start = new Date();
   const end = new Date(start.getTime() + 60 * 60 * 1000);
-  return {
+  const event: ParsedVEvent = {
     kind: "request",
     calendarUid: `teams-link-${stableHash(teamsJoinUrl)}`,
     subject: decodeMimeWords(input.headers.get("subject") ?? "").trim() || "Teams meeting",
     organizer: { email: input.rawSender.toLowerCase() },
     attendees: headerAttendees(input.headers),
     startTime: start.toISOString(),
-    endTime: end.toISOString(),
+    endTime: end.toISOString()
+  };
+  return {
+    ...event,
     teamsJoinUrl,
     rawRecipient: input.rawRecipient.toLowerCase(),
-    rawSender: input.rawSender.toLowerCase()
+    rawSender: input.rawSender.toLowerCase(),
+    events: [event]
   };
 }
 

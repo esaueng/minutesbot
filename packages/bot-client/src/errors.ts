@@ -6,10 +6,9 @@ export class BotClientError extends Error {
     public readonly code: string
   ) {
     super(message);
+    this.name = "BotClientError";
   }
 }
-
-export { BotClientError as AttendeeClientError };
 
 export function retryableStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;

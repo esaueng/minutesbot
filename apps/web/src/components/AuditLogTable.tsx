@@ -1,17 +1,25 @@
-export function AuditLogTable({ logs, timeZone }: { logs: Array<Record<string, unknown>>; timeZone: string }) {
+import type { AuditLogRow } from "../lib/types";
+import { StatusBadge } from "./StatusBadge";
+
+export function AuditLogTable({ logs, timeZone }: { logs: AuditLogRow[]; timeZone: string }) {
+  if (logs.length === 0) return <p className="mutedText">No audit log entries.</p>;
   return (
     <table>
-      <thead><tr><th>Time</th><th>Event</th><th>Actor</th><th>Resource</th><th>Metadata</th></tr></thead>
+      <thead>
+        <tr><th>Time</th><th>Severity</th><th>Event</th><th>Actor</th><th>Resource</th><th>Message</th><th>Metadata</th></tr>
+      </thead>
       <tbody>
         {logs.map((log) => {
-          const createdAt = String(log.created_at ?? "");
+          const createdAt = log.created_at ?? "";
           return (
-            <tr key={String(log.id)}>
+            <tr key={log.id}>
               <td className="timeCell" title={createdAt}><time dateTime={createdAt}>{formatAuditLogTime(createdAt, timeZone)}</time></td>
-              <td>{String(log.event_type)}</td>
-              <td>{String(log.actor_email ?? "")}</td>
-              <td>{String(log.resource_type ?? "")}/{String(log.resource_id ?? "")}</td>
-              <td><code>{String(log.metadata ?? "")}</code></td>
+              <td><StatusBadge value={log.severity} /></td>
+              <td>{log.event_type}</td>
+              <td>{log.actor_email ?? ""}</td>
+              <td>{log.resource_type ?? ""}{log.resource_id ? `/${log.resource_id}` : ""}</td>
+              <td>{log.message ?? ""}</td>
+              <td>{log.metadata ? <code>{log.metadata}</code> : null}</td>
             </tr>
           );
         })}

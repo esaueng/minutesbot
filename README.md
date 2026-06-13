@@ -1,102 +1,64 @@
 # minutesbot
 
-minutesbot is an open-source, self-hosted, single-tenant Microsoft Teams meeting notetaker. It coordinates meeting invites, scheduling, first-party meeting bot creation, managed bot webhooks, transcript artifact storage, AI summaries, recipient filtering, email delivery, retention, and audit visibility.
+minutesbot is an open-source, self-hosted, single-tenant Microsoft Teams meeting notetaker that runs entirely on your Cloudflare account.
 
-This repository is Cloudflare-first. The control plane runs on Cloudflare Workers, Workers Static Assets, D1, R2, Queues, Workflows, Email Routing, and a first-party Cloudflare Container meeting bot runtime. It does not use, clone, fork, vendor, or deploy the upstream Attendee repository.
+Invite a recorder mailbox (e.g. `notetaker@yourcompany.com`) to a Teams meeting and minutesbot does the rest: Cloudflare Email Routing delivers the invite to the Worker, which parses the MIME + ICS (including recurring series), expands occurrences, and schedules a bot. At meeting time a Cloudflare Container joins Teams as a guest with Playwright, records the audio to MP3 (PulseAudio + ffmpeg), and uploads it to R2. The pipeline then transcribes with Whisper, generates a structured recap with an OpenAI-compatible model (GPT-5.5 by default, strict JSON), and emails the recap — only to attendees on your admin-allowed domains. External attendees never receive recaps. A React admin UI covers settings, meeting timelines, retries, audit logs, and retention.
 
-## Architecture
-
-- React + Vite admin UI hosted on Workers Static Assets.
-- Hono API Worker for settings, dashboards, retry actions, artifacts, audit logs, and meeting bot webhooks.
-- Cloudflare Email Worker for inbound recorder mailbox invites.
-- Cloudflare D1 for metadata and audit state.
-- Cloudflare R2 for raw invites, bot-uploaded recordings, transcript files, summaries, and artifacts.
-- Cloudflare Queues and Workflows for durable bot creation, transcript finalization, summaries, email, and cleanup.
-- Fetch-based meeting bot client in `packages/bot-client`.
-- First-party meeting bot runtime in `apps/bot-runtime` deployed through `deploy/bot-container`.
-
-The main Cloudflare Worker uses `https://app.minutes.bot` as the admin UI and `APP_BASE_URL`, `https://api.minutes.bot` as the public API base URL, and `https://meeting.minutes.bot` as the meeting bot webhook base URL. The meeting bot runtime API uses `https://meeting-api.minutes.bot`, with `notetaker@minutes.bot` as the recorder mailbox.
+Everything is Cloudflare-first: one main Worker (Hono API + admin SPA + inbound email + queue consumer + cron) backed by D1, R2, and Queues, plus a separately deployed bot container worker. No third-party meeting-bot service.
 
 ## Quickstart
+
+Full guide: [docs/deployment.md](docs/deployment.md).
+
+```bash
+pnpm install
+pnpm setup:cloudflare        # prereqs, domains/recorder email, D1/R2/queues, config patching
+wrangler secret put AI_API_KEY
+# Cloudflare dashboard: route the recorder address to the Worker (Email Routing)
+pnpm deploy                  # migrations, build, deploy, smoke checks
+pnpm bot:deploy              # bot container build + internal token provisioning
+pnpm check                   # health checks
+```
+
+Local development ([docs/local-development.md](docs/local-development.md)):
 
 ```bash
 pnpm install
 pnpm db:migrate:local
-pnpm seed:dev # prints a settings template to adapt; it does not write to the database
+pnpm seed:dev
 pnpm dev
 ```
 
-For a Cloudflare-first production deployment:
-
-```bash
-cp .env.oneshot.example .env.oneshot
-# fill .env.oneshot with account, domain, recorder, and provider values
-pnpm install
-pnpm deploy:oneshot --env production
-```
-
-Set secrets with Wrangler, never in D1 or source:
-
-```bash
-wrangler secret put AI_API_KEY
-wrangler secret put SESSION_SECRET
-```
-
-The one-shot deploy script generates and pushes the internal meeting bot token automatically; there are no bot API or webhook keys to configure.
-Prefer `pnpm deploy:oneshot --env production` for production deploys because it generates a fresh meeting bot container instance and runtime version. `pnpm bot:deploy` is reserved for container-only updates and also writes a fresh generated bot config before deploying.
-
 ## Commands
 
-- `pnpm build`
-- `pnpm test`
-- `pnpm typecheck`
-- `pnpm lint`
-- `pnpm run deploy`
-- `pnpm deploy:oneshot --env production`
-- `pnpm setup:cloudflare`
-- `pnpm bot:deploy`
-- `pnpm check`
+| Command | What it does |
+| --- | --- |
+| `pnpm build` | Workspace build (web assets + packages, typecheck per package) |
+| `pnpm test` | Vitest across packages, apps, scripts, and deploy |
+| `pnpm typecheck` / `pnpm lint` | Repo-wide TypeScript and ESLint |
+| `pnpm dev` | Vite dev server for the admin UI |
+| `pnpm setup:cloudflare [--dry-run]` | First-time setup: prereqs, domain/email patching, resources |
+| `pnpm cloudflare:ensure [--dry-run]` | Create-or-verify D1/R2/queues, patch database id, migrations |
+| `pnpm deploy` / `pnpm deploy:staging` | Deploy the main Worker (with validation + smoke checks) |
+| `pnpm bot:deploy [--rotate-token]` | Deploy the bot container worker, provision `BOT_INTERNAL_TOKEN` |
+| `pnpm check` | API + bot runtime health checks (+ authed R2 round trip) |
+| `pnpm db:migrate:local` / `pnpm db:migrate:remote` | D1 migrations |
+| `pnpm seed:dev [--print]` | Seed local D1 with development settings |
+| `pnpm env:template` | Print the `.env` template (`.env.example`) |
 
-After deploying the meeting bot container, verify the live runtime is the new container:
+## Monitoring
 
-```bash
-curl -s https://meeting-api.minutes.bot/_ops/health | jq
-```
-
-Confirm `version`, `diagnosticVersion`, and `containerInstanceId` changed from the previous deploy.
-
-## Uptime
-
-Use an external uptime monitor against the public API health endpoint:
-
-```text
-https://api.minutes.bot/api/health
-```
-
-The expected response is HTTP `200` with `{ "ok": true }`. Locally, the same check is available through:
-
-```bash
-API_BASE_URL=https://api.minutes.bot pnpm check
-```
-
-Monitor the first-party meeting bot runtime separately:
-
-```text
-https://meeting-api.minutes.bot/_ops/health
-```
-
-Alert if the response is not HTTP `200`, `ok` is not `true`, or the `missing` array is not empty. The bot runtime response also includes `version`, `diagnosticVersion`, and `containerInstanceId`; after a deploy, those fields should match the container version you expect to be serving traffic.
+Point an external uptime monitor at `https://<api domain>/api/health` (expect `200 {"ok":true}`) and `https://<meeting-api domain>/_ops/health` (expect `200`, `ok: true`). After a bot deploy, `version` and `containerInstanceId` in the latter should change.
 
 ## Docs
 
-- [Architecture](docs/architecture.md)
-- [Cloudflare setup](docs/cloudflare-setup.md)
-- [Meeting bot runtime](docs/meeting-bot-runtime.md)
-- [Security](docs/security.md)
-- [Operations](docs/operations.md)
-- [Troubleshooting](docs/troubleshooting.md)
+- [Architecture](docs/architecture.md) — components, data model, state machines, recurrence
+- [Deployment](docs/deployment.md) — the production path end to end
+- [Operations](docs/operations.md) — admin UI, retries, jobs/dead letters, retention
+- [Troubleshooting](docs/troubleshooting.md) — failure modes from lobby timeouts to recap policy
+- [Meeting bot runtime](docs/meeting-bot-runtime.md) — runtime API, webhooks, live test guide
+- [Security](docs/security.md) and [Access control](docs/security-access-control.md)
 - [Local development](docs/local-development.md)
-- [Access control](docs/security-access-control.md)
 
 ## License
 

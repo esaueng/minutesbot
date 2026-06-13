@@ -75,10 +75,13 @@ async function storeRecording(request: Request, env: BotContainerEnv): Promise<R
 }
 
 function isRecordingKey(key: string): boolean {
-  // Accept both control-plane keys (recordings/mtg_<id>/...) and the
-  // runtime's bot-id fallback keys, while still confining writes to the
-  // recordings/ prefix with no traversal.
-  return /^recordings\/[a-z0-9][a-z0-9._-]*\/recording\.(mp3|mp4|webm)$/i.test(key);
+  // Uploads are confined to the recordings/ and diagnostics/ prefixes with
+  // fixed file names — no traversal, no arbitrary writes. Mirrors
+  // recordingKeyPattern in @minutesbot/shared.
+  return (
+    /^recordings\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+\/(recording|chunks\/chunk-\d{3})\.(mp3|mp4|webm|wav)$/.test(key) ||
+    /^diagnostics\/[a-zA-Z0-9_-]+\/(screenshot\.png|page\.html|console\.log|bot\.log|visible-text\.txt|diagnostics\.json)$/.test(key)
+  );
 }
 
 function stringEnv(env: BotContainerEnv): Record<string, string> {

@@ -450,12 +450,114 @@ describe("Teams runtime browser flow", () => {
     });
 
     try {
-      await expect(__runtimeTest.joinAsGuest(page, { ...guestInput(), joinTimeoutSeconds: 1 })).rejects.toThrow(
-        "Meeting bot did not join before the 1 second timeout expired"
-      );
+      await expect(__runtimeTest.joinAsGuest(page, { ...guestInput(), joinTimeoutSeconds: 1 })).rejects.toMatchObject({
+        message: "Meeting bot did not join before the 1 second timeout expired",
+        stage: "lobby_timeout",
+        retryable: false
+      });
     } finally {
       nowSpy.mockRestore();
     }
+  });
+
+  it("classifies a deadline expiry while Teams reports the meeting has not started", async () => {
+    const nowSpy = vi.spyOn(Date, "now");
+    let now = 0;
+    nowSpy.mockImplementation(() => now);
+    const page = fakePage({
+      texts: [{ text: "The meeting hasn't started yet", locator: visibleLocator() }],
+      onWaitForTimeout: async () => {
+        now += 1_000;
+      }
+    });
+
+    try {
+      await expect(__runtimeTest.joinAsGuest(page, { ...guestInput(), joinTimeoutSeconds: 2 })).rejects.toMatchObject({
+        stage: "meeting_not_started_timeout",
+        retryable: false
+      });
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it("emits waiting_for_start while the meeting has not started and returns to prejoin when it does", async () => {
+    const states: string[] = [];
+    let meetingStarted = false;
+    let joined = false;
+    let admitted = false;
+    const notStartedMessage = visibleLocator();
+    const joinButton = visibleLocator(() => {
+      joined = true;
+    });
+    const lobbyMessage = visibleLocator();
+    const joinedMessage = visibleLocator();
+    const page = fakePage({
+      roles: () => (meetingStarted ? [{ role: "button", name: "Join now", locator: joinButton }] : []),
+      texts: () => [
+        ...(!meetingStarted ? [{ text: "The meeting hasn't started yet", locator: notStartedMessage }] : []),
+        ...(joined && !admitted ? [{ text: "Someone will let you in soon", locator: lobbyMessage }] : []),
+        ...(admitted ? [{ text: "You're the only one here", locator: joinedMessage }] : [])
+      ],
+      onWaitForTimeout: async () => {
+        if (!meetingStarted) meetingStarted = true;
+        else admitted = true;
+      }
+    });
+
+    await expect(
+      __runtimeTest.joinAsGuest(page, {
+        ...guestInput(),
+        onState: async (state: string) => {
+          states.push(state);
+        }
+      })
+    ).resolves.toBe("joined");
+
+    expect(states).toEqual(["prejoin", "waiting_for_start", "prejoin", "waiting_room"]);
+  });
+
+  it("splits a recording into MP3 chunks with the ffmpeg segment muxer", async () => {
+    const commands: Array<{ command: string; args: string[] }> = [];
+    const written: Array<{ path: string; bytes: Uint8Array }> = [];
+    const removed: string[] = [];
+    const splitter = __runtimeTest.createRecordingSplitter({
+      mkdtemp: async () => "/tmp/minutesbot-chunks",
+      readFile: async (path) => new Uint8Array([Number(path.includes("chunk-001")) + 1]),
+      rm: async (path) => {
+        removed.push(path);
+      },
+      runCommand: async (command, args) => {
+        commands.push({ command, args });
+      },
+      writeFile: async (path, bytes) => {
+        written.push({ path, bytes });
+      },
+      readdir: async () => ["recording.mp3", "chunk-001.mp3", "chunk-000.mp3"]
+    });
+
+    const chunks = await splitter({ bytes: new Uint8Array([7, 7, 7]), chunkSeconds: 600 });
+
+    expect(written).toEqual([{ path: "/tmp/minutesbot-chunks/recording.mp3", bytes: new Uint8Array([7, 7, 7]) }]);
+    expect(commands).toEqual([
+      {
+        command: "ffmpeg",
+        args: [
+          "-y",
+          "-i",
+          "/tmp/minutesbot-chunks/recording.mp3",
+          "-f",
+          "segment",
+          "-segment_time",
+          "600",
+          "-c",
+          "copy",
+          "/tmp/minutesbot-chunks/chunk-%03d.mp3"
+        ]
+      }
+    ]);
+    expect(chunks).toEqual([new Uint8Array([1]), new Uint8Array([2])]);
+    expect(removed).toEqual(["/tmp/minutesbot-chunks"]);
   });
 
   it("times out startup commands instead of waiting indefinitely", async () => {
@@ -489,20 +591,33 @@ describe("Teams runtime browser flow", () => {
     });
 
     await expect(__runtimeTest.joinAsGuest(page, guestInput())).rejects.toThrow("Teams guest join is blocked or requires sign-in.");
+    await expect(__runtimeTest.joinAsGuest(page, guestInput())).rejects.toMatchObject({ stage: "sign_in_required", retryable: false });
   });
 
-  it("classifies Teams captcha, denied, and connection blocker messages", async () => {
+  it("classifies Teams captcha, denied, ended, policy, and connection blocker messages with failure stages", async () => {
     await expect(
       __runtimeTest.joinAsGuest(fakePage({ texts: [{ text: "Verify you're a real person", locator: visibleLocator() }] }), guestInput())
-    ).rejects.toThrow("Teams blocked guest join with a captcha.");
+    ).rejects.toMatchObject({ message: expect.stringContaining("Teams blocked guest join with a captcha."), stage: "captcha", retryable: false });
 
     await expect(
       __runtimeTest.joinAsGuest(fakePage({ texts: [{ text: "Your request to join was declined", locator: visibleLocator() }] }), guestInput())
-    ).rejects.toThrow("Someone in the meeting denied the bot request to join.");
+    ).rejects.toMatchObject({
+      message: expect.stringContaining("Someone in the meeting denied the bot request to join."),
+      stage: "admission_denied",
+      retryable: false
+    });
+
+    await expect(
+      __runtimeTest.joinAsGuest(fakePage({ texts: [{ text: "This meeting has ended", locator: visibleLocator() }] }), guestInput())
+    ).rejects.toMatchObject({ stage: "meeting_ended", retryable: false });
+
+    await expect(
+      __runtimeTest.joinAsGuest(fakePage({ texts: [{ text: "Guest access is disabled due to org policy", locator: visibleLocator() }] }), guestInput())
+    ).rejects.toMatchObject({ stage: "policy_blocked", retryable: false });
 
     await expect(
       __runtimeTest.joinAsGuest(fakePage({ texts: [{ text: "Sorry, we couldn't connect you", locator: visibleLocator() }] }), guestInput())
-    ).rejects.toThrow("Teams could not connect the bot.");
+    ).rejects.toMatchObject({ message: expect.stringContaining("Teams could not connect the bot."), stage: "navigation", retryable: true });
   });
 
   it("retries retryable pre-join failures with a fresh page factory but does not retry hard blockers", async () => {
@@ -833,7 +948,9 @@ describe("Teams runtime browser flow", () => {
 function guestInput() {
   return {
     meetingUrl: "https://teams.microsoft.com/l/meetup-join/test",
-    botName: "minutesbot",
+    displayName: "minutesbot",
+    joinTimeoutSeconds: 15 * 60,
+    maxDurationSeconds: 3600,
     allowGuestJoin: true
   };
 }

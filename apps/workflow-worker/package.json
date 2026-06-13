@@ -14,6 +14,8 @@
     "@minutesbot/email-sender": "workspace:*",
     "@minutesbot/recipient-policy": "workspace:*",
     "@minutesbot/shared": "workspace:*",
-    "@minutesbot/summary-engine": "workspace:*"
+    "@minutesbot/summary-engine": "workspace:*",
+    "@minutesbot/scheduler": "workspace:*",
+    "@minutesbot/transcription": "workspace:*"
   }
 }

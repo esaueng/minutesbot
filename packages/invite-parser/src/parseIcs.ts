@@ -1,7 +1,7 @@
 import { AppError } from "@minutesbot/shared";
-import { parseIcsDate, parseUtcOffsetToMinutes, type IcsDateContext } from "./icsDates";
+import { parseIcsDateTime, parseUtcOffsetToMinutes, type IcsDateContext, type IcsDateTime } from "./icsDates";
 import { normalizeAttendees } from "./normalizeAttendees";
-import type { ParsedCalendar, RawIcsAttendee } from "./types";
+import type { InviteKind, ParsedCalendar, ParsedVEvent, RawIcsAttendee } from "./types";
 
 type IcsProperty = {
   name: string;
@@ -9,15 +9,31 @@ type IcsProperty = {
   value: string;
 };
 
-export function parseIcsCalendar(icsText: string): ParsedCalendar {
+/** Parses every VEVENT in a VCALENDAR (series master and/or occurrence overrides), in file order. */
+export function parseCalendar(icsText: string): ParsedCalendar {
   const unfolded = unfoldLines(icsText);
-  const kind = classifyMethod(readProp(unfolded, "METHOD")?.value);
-  // Property lookup is scoped to the first VEVENT so VTIMEZONE sub-blocks
-  // (whose STANDARD/DAYLIGHT entries carry their own DTSTART) cannot shadow
-  // the event's actual fields.
-  const event = eventBlockLines(unfolded);
+  const method = readProp(unfolded, "METHOD")?.value.trim().toUpperCase() || undefined;
+  const kind = classifyMethod(method);
   const dateContext = buildDateContext(unfolded);
+  // Property lookup is scoped to each VEVENT so VTIMEZONE sub-blocks (whose
+  // STANDARD/DAYLIGHT entries carry their own DTSTART) cannot shadow the
+  // event's actual fields. Calendars without an explicit VEVENT block fall
+  // back to scanning all lines, preserving lenient handling of bare payloads.
+  const blocks = eventBlocks(unfolded);
+  const events = (blocks.length > 0 ? blocks : [unfolded]).map((block) => parseEventBlock(block, kind, dateContext));
+  return { method, kind, events };
+}
 
+/**
+ * Parses a VCALENDAR down to its primary VEVENT: the series master (no
+ * RECURRENCE-ID) when present, otherwise the first event in the file.
+ */
+export function parseIcsCalendar(icsText: string): ParsedVEvent {
+  const calendar = parseCalendar(icsText);
+  return calendar.events.find((event) => !event.recurrenceId) ?? calendar.events[0];
+}
+
+function parseEventBlock(event: string[], kind: InviteKind, dateContext: IcsDateContext): ParsedVEvent {
   const uid = readProp(event, "UID");
   const summary = readProp(event, "SUMMARY");
   const dtStart = readProp(event, "DTSTART");
@@ -34,17 +50,49 @@ export function parseIcsCalendar(icsText: string): ParsedCalendar {
     throw new AppError("INVITE_PARSE_ERROR", "Calendar invite is missing required fields", 400);
   }
 
+  const warnings: string[] = [];
+  const startDateTime = dtStart ? parseIcsDateTime(dtStart.value, dtStart.params, dateContext) : undefined;
+  const endDateTime = dtEnd ? parseIcsDateTime(dtEnd.value, dtEnd.params, dateContext) : undefined;
+  const recurrence = readProp(event, "RECURRENCE-ID");
+  const sequenceValue = Number.parseInt(readProp(event, "SEQUENCE")?.value.trim() ?? "", 10);
+  const rdates = readDateList(event, "RDATE", dateContext, warnings);
+  const exdates = readDateList(event, "EXDATE", dateContext, warnings);
+
   return {
     kind,
     calendarUid: decodeIcsValue(uid.value),
     subject: summary ? decodeIcsValue(summary.value) : "",
     organizer: organizer ? parseOrganizerProperty(organizer, kind === "cancel") : { email: "" },
     attendees: normalizeAttendees(attendees),
-    startTime: dtStart ? parseIcsDate(dtStart.value, dtStart.params, dateContext) : "",
-    endTime: dtEnd ? parseIcsDate(dtEnd.value, dtEnd.params, dateContext) : "",
+    startTime: startDateTime?.utc ?? "",
+    endTime: endDateTime?.utc ?? "",
     description: decodeIcsValue(readProp(event, "DESCRIPTION")?.value ?? ""),
-    location: decodeIcsValue(readProp(event, "LOCATION")?.value ?? "")
+    location: decodeIcsValue(readProp(event, "LOCATION")?.value ?? ""),
+    startDateTime,
+    endDateTime,
+    sequence: Number.isNaN(sequenceValue) ? undefined : sequenceValue,
+    recurrenceId: recurrence ? parseIcsDateTime(recurrence.value, recurrence.params, dateContext) : undefined,
+    recurrenceRange: recurrence?.params.get("RANGE")?.toUpperCase() === "THISANDFUTURE" ? "THISANDFUTURE" : undefined,
+    rrule: readProp(event, "RRULE")?.value.trim() || undefined,
+    rdates,
+    exdates,
+    warnings: warnings.length > 0 ? warnings : undefined
   };
+}
+
+/** Reads RDATE/EXDATE properties: multiple lines and comma-separated value lists. */
+function readDateList(lines: string[], name: string, context: IcsDateContext, warnings: string[]): IcsDateTime[] | undefined {
+  const dates: IcsDateTime[] = [];
+  for (const property of readProps(lines, name)) {
+    if (property.params.get("VALUE")?.toUpperCase() === "PERIOD") {
+      warnings.push(`${name};VALUE=PERIOD is not supported; values ignored`);
+      continue;
+    }
+    for (const value of property.value.split(",")) {
+      if (value.trim()) dates.push(parseIcsDateTime(value, property.params, context));
+    }
+  }
+  return dates.length > 0 ? dates : undefined;
 }
 
 function classifyMethod(method: string | undefined): ParsedCalendar["kind"] {
@@ -59,11 +107,20 @@ function unfoldLines(input: string): string[] {
   return input.replace(/\r\n[ \t]/g, "").replace(/\n[ \t]/g, "").split(/\r?\n/);
 }
 
-function eventBlockLines(lines: string[]): string[] {
-  const begin = lines.findIndex((line) => line.trim().toUpperCase() === "BEGIN:VEVENT");
-  if (begin === -1) return lines;
-  const end = lines.findIndex((line, index) => index > begin && line.trim().toUpperCase() === "END:VEVENT");
-  return lines.slice(begin + 1, end === -1 ? undefined : end);
+function eventBlocks(lines: string[]): string[][] {
+  const blocks: string[][] = [];
+  let begin = -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    const upper = lines[index].trim().toUpperCase();
+    if (upper === "BEGIN:VEVENT" && begin === -1) begin = index;
+    if (upper === "END:VEVENT" && begin !== -1) {
+      blocks.push(lines.slice(begin + 1, index));
+      begin = -1;
+    }
+  }
+  // Tolerate a missing END:VEVENT on the final block.
+  if (begin !== -1) blocks.push(lines.slice(begin + 1));
+  return blocks;
 }
 
 function buildDateContext(lines: string[]): IcsDateContext {
