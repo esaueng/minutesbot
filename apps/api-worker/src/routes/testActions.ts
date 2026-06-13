@@ -3,6 +3,7 @@ import { getSettings } from "@minutesbot/db";
 import { createEmailProvider, createPolicyEnforcedProvider, formatEmailAddress } from "@minutesbot/email-sender";
 import { renderRecapEmail } from "@minutesbot/email-renderer";
 import { parseIncomingInvite } from "@minutesbot/invite-parser";
+import { BotClientError } from "@minutesbot/bot-client";
 import { AppError, readJsonWithLimit, readTextWithLimit } from "@minutesbot/shared";
 import { createRuntimeClient } from "../../../workflow-worker/src/botRuntime";
 import type { Env } from "../env";
@@ -42,9 +43,14 @@ export const testActionsRoute = new Hono<{ Bindings: Env }>()
   })
   .post("/test-bot", async (c) => {
     const client = createRuntimeClient(c.env);
-    const health = await client.checkHealth();
-    const ready = await client.checkReady();
-    return c.json({ ok: health.ok && ready.ready, health, ready });
+    try {
+      const health = await client.checkHealth();
+      const ready = await client.checkReady();
+      return c.json({ ok: health.ok && ready.ready, health, ready });
+    } catch (error) {
+      if (error instanceof BotClientError) throw new AppError(error.code, error.message, 502);
+      throw error;
+    }
   })
   .post("/test-ai", async (c) => {
     if (!c.env.AI_API_KEY) throw new AppError("AI_NOT_CONFIGURED", "Set the AI_API_KEY secret first.", 503);

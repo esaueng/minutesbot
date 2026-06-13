@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultSettings } from "@minutesbot/shared";
 import {
   createJob,
@@ -15,6 +15,10 @@ import { app } from "../index";
 import type { Env } from "../env";
 
 const ADMIN_TOKEN = "test-admin-secret";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 async function makeEnv(): Promise<{ env: Env; db: D1Database; queueMessages: unknown[] }> {
   const db = createMigratedD1();
@@ -104,6 +108,28 @@ describe("api worker routes", () => {
     const { env } = await makeEnv();
     const response = await app.fetch(new Request("https://app.example.com/api/events"), env);
     expect(response.status).toBe(401);
+  });
+
+  it("returns bot runtime client failures as admin diagnostics", async () => {
+    const { env } = await makeEnv();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    env.BOT_RUNTIME = {
+      fetch: async () =>
+        new Response(JSON.stringify({ detail: "container boot failed" }), {
+          status: 500,
+          headers: { "content-type": "application/json" }
+        })
+    } as unknown as Fetcher;
+
+    const response = await app.fetch(authed("/api/admin/test-bot", { method: "POST" }), env);
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "BOT_UPSTREAM_ERROR",
+        message: "Meeting bot request failed with 500: container boot failed"
+      }
+    });
   });
 
   it("round-trips settings and never exposes secret values", async () => {

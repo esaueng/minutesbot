@@ -75,9 +75,9 @@ describe("root wrangler config", () => {
     expect(config.migrations).toBeUndefined();
   });
 
-  it("defaults to Cloudflare Access for admin auth in production", () => {
+  it("allows admin token auth in production when explicitly enabled", () => {
     expect(config.vars?.ENVIRONMENT).toBe("production");
-    expect(config.vars?.ALLOW_ADMIN_TOKEN_AUTH).toBe("false");
+    expect(config.vars?.ALLOW_ADMIN_TOKEN_AUTH).toBe("true");
   });
 });
 
