@@ -16,6 +16,14 @@ type DashboardData = {
 
 const upcomingWindowDays = 7;
 
+type BotRuntimeTestResult = {
+  ok: boolean;
+  health?: {
+    checks?: Record<string, { ok?: boolean; detail?: string }>;
+  };
+  ready?: { ready: boolean; reason?: string };
+};
+
 export function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState("");
@@ -111,8 +119,9 @@ function BotRuntimeCheckChip() {
           setState("running");
           setMessage("");
           try {
-            const result = await apiPost<{ ok: boolean }>("/api/admin/test-bot");
+            const result = await apiPost<BotRuntimeTestResult>("/api/admin/test-bot");
             setState(result.ok ? "ok" : "failed");
+            setMessage(result.ok ? "" : botRuntimeCheckMessage(result));
           } catch (checkError) {
             setState("failed");
             setMessage(checkError instanceof Error ? checkError.message : "Check failed");
@@ -124,4 +133,13 @@ function BotRuntimeCheckChip() {
       {message && <span className="errorText">{message}</span>}
     </span>
   );
+}
+
+export function botRuntimeCheckMessage(result: BotRuntimeTestResult): string {
+  if (result.ready?.reason) return result.ready.reason;
+  const failedChecks = Object.entries(result.health?.checks ?? {})
+    .filter(([, check]) => check.ok === false)
+    .map(([name, check]) => (check.detail ? `${name}: ${check.detail}` : name));
+  if (failedChecks.length > 0) return `Failed checks: ${failedChecks.join(", ")}`;
+  return "Bot runtime check failed.";
 }

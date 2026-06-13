@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { defaultSettings } from "@minutesbot/shared";
 import {
   createJob,
@@ -104,6 +104,64 @@ describe("api worker routes", () => {
     const { env } = await makeEnv();
     const response = await app.fetch(new Request("https://app.example.com/api/events"), env);
     expect(response.status).toBe(401);
+  });
+
+  it("returns a failed bot check when the runtime does not expose readiness", async () => {
+    const { env } = await makeEnv();
+    env.BOT_RUNTIME = {
+      fetch: vi.fn(async (input: RequestInfo | URL) => {
+        const pathname = new URL(String(input)).pathname;
+        if (pathname === "/_ops/health") {
+          return Response.json({
+            ok: true,
+            version: "old-runtime",
+            containerInstanceId: "primary",
+            checks: {
+              chromium: { ok: true },
+              ffmpeg: { ok: true },
+              pulseaudio: { ok: true },
+              tempWritable: { ok: true },
+              config: { ok: true }
+            }
+          });
+        }
+        if (pathname === "/_ops/ready") return new Response("404 Not Found", { status: 404 });
+        return new Response("not found", { status: 404 });
+      })
+    } as unknown as Fetcher;
+
+    const response = await app.fetch(authed("/api/admin/test-bot", { method: "POST" }), env);
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { ok: boolean; ready: { ready: boolean; reason?: string } };
+    expect(body.ok).toBe(false);
+    expect(body.ready.ready).toBe(false);
+    expect(body.ready.reason).toContain("does not expose /_ops/ready");
+  });
+
+  it("surfaces bot runtime client errors through the API error contract", async () => {
+    const { env } = await makeEnv();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    env.BOT_RUNTIME = {
+      fetch: vi.fn(async () => {
+        throw new TypeError("network exploded");
+      })
+    } as unknown as Fetcher;
+
+    try {
+      const response = await app.fetch(authed("/api/admin/test-bot", { method: "POST" }), env);
+
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toMatchObject({
+        error: {
+          code: "BOT_NETWORK_ERROR",
+          message: expect.stringContaining("Meeting bot request failed")
+        }
+      });
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("round-trips settings and never exposes secret values", async () => {

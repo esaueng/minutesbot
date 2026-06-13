@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { BotClientError, type BotRuntimeReadiness } from "@minutesbot/bot-client";
 import { getSettings } from "@minutesbot/db";
 import { createEmailProvider, createPolicyEnforcedProvider, formatEmailAddress } from "@minutesbot/email-sender";
 import { renderRecapEmail } from "@minutesbot/email-renderer";
@@ -42,8 +43,8 @@ export const testActionsRoute = new Hono<{ Bindings: Env }>()
   })
   .post("/test-bot", async (c) => {
     const client = createRuntimeClient(c.env);
-    const health = await client.checkHealth();
-    const ready = await client.checkReady();
+    const health = await botRuntimeCall(() => client.checkHealth());
+    const ready = await botRuntimeReadiness(() => client.checkReady());
     return c.json({ ok: health.ok && ready.ready, health, ready });
   })
   .post("/test-ai", async (c) => {
@@ -121,3 +122,39 @@ export const testActionsRoute = new Hono<{ Bindings: Env }>()
     const { parseSettings } = await import("@minutesbot/shared");
     return c.json({ ok: true, settings: parseSettings(body) });
   });
+
+async function botRuntimeCall<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    throw botRuntimeErrorResponse(error);
+  }
+}
+
+async function botRuntimeReadiness(operation: () => Promise<BotRuntimeReadiness>): Promise<BotRuntimeReadiness> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof BotClientError && error.code === "BOT_NOT_FOUND") {
+      return {
+        ready: false,
+        reason: "Bot runtime does not expose /_ops/ready. Redeploy the bot container with the current minutesbot version."
+      };
+    }
+    throw botRuntimeErrorResponse(error);
+  }
+}
+
+function botRuntimeErrorResponse(error: unknown): AppError | unknown {
+  if (!(error instanceof BotClientError)) return error;
+  return new AppError(error.code, error.message, botRuntimeHttpStatus(error), {
+    retryable: error.retryable,
+    upstreamStatus: error.status
+  });
+}
+
+function botRuntimeHttpStatus(error: BotClientError): number {
+  if (error.code === "BOT_REQUEST_TIMEOUT") return 504;
+  if (error.status === 0) return 503;
+  return 502;
+}
