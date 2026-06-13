@@ -130,7 +130,7 @@ async function validatePrerequisites(runCommand: RunCommand, log: (m: string) =>
   }
 }
 
-function currentAnswers(rootText: string): SetupAnswers {
+export function currentAnswers(rootText: string): SetupAnswers {
   const config = JSON.parse(stripJsonComments(rootText)) as { vars?: Record<string, string> };
   const vars = config.vars ?? {};
   return {

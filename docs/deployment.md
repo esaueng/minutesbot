@@ -74,6 +74,30 @@ pnpm deploy        # = deploy:production
 
 `scripts/deploy-minutesbot.ts` runs, in order: resource create-or-verify (incl. remote migrations and `database_id` patch) → placeholder validation → workspace/web asset build → `wrangler deploy` → post-deploy smoke checks via `pnpm check`. A `deploy:staging` variant exists but requires an explicit `env.staging` block in `wrangler.jsonc` (the script fails closed without one).
 
+### Cloudflare Workers Builds
+
+If you deploy from a connected Git repository in Cloudflare, use:
+
+```bash
+pnpm run build
+```
+
+as the build command and:
+
+```bash
+npx wrangler deploy
+```
+
+as the deploy command. Add these Cloudflare build environment variables so the build can patch the checked-in placeholder domains before Wrangler deploys:
+
+- `APP_BASE_URL=https://app.yourcompany.com`
+- `API_BASE_URL=https://api.yourcompany.com`
+- `BOT_WEBHOOK_BASE_URL=https://meeting.yourcompany.com`
+- `BOT_API_BASE_URL=https://meeting-api.yourcompany.com`
+- `RECORDER_EMAIL=notetaker@yourcompany.com` (or `DEFAULT_RECORDER_EMAIL`)
+
+Without those values, the build fails before provisioning/deploy instead of letting Wrangler try to attach `example.com` routes.
+
 ## 6. Deploy the bot container
 
 ```bash
