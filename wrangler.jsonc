@@ -1,7 +1,10 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
+  // Self-hosting: replace every <PLACEHOLDER> below (or run `pnpm setup:cloudflare`,
+  // which creates the resources and patches the ids/domains in place).
+  // The Cloudflare account is selected via the CLOUDFLARE_ACCOUNT_ID env var
+  // or `wrangler login`; account ids are intentionally not checked in.
   "name": "minutesbot",
-  "account_id": "747b74cbd7d019dd7aeecb2c24a4bf10",
   "main": "apps/api-worker/src/index.ts",
   "assets": {
     "directory": "./apps/web/dist",
@@ -12,15 +15,15 @@
   "workers_dev": false,
   "routes": [
     {
-      "pattern": "app.minutes.bot",
+      "pattern": "app.example.com",
       "custom_domain": true
     },
     {
-      "pattern": "api.minutes.bot",
+      "pattern": "api.example.com",
       "custom_domain": true
     },
     {
-      "pattern": "meeting.minutes.bot",
+      "pattern": "meeting.example.com",
       "custom_domain": true
     }
   ],
@@ -33,21 +36,20 @@
     "head_sampling_rate": 1
   },
   "vars": {
-    "APP_BASE_URL": "https://app.minutes.bot",
-    "API_BASE_URL": "https://api.minutes.bot",
-    "BOT_WEBHOOK_BASE_URL": "https://meeting.minutes.bot",
-    "BOT_API_BASE_URL": "https://meeting-api.minutes.bot",
-    "BOT_RECORDING_BUCKET_NAME": "minutesbot-artifacts",
-    "DEFAULT_RECORDER_EMAIL": "notetaker@minutes.bot",
-    "DEFAULT_SENDER_EMAIL": "notetaker@minutes.bot",
+    "APP_BASE_URL": "https://app.example.com",
+    "API_BASE_URL": "https://api.example.com",
+    "BOT_WEBHOOK_BASE_URL": "https://meeting.example.com",
+    "BOT_API_BASE_URL": "https://meeting-api.example.com",
+    "DEFAULT_RECORDER_EMAIL": "notetaker@example.com",
+    "DEFAULT_SENDER_EMAIL": "notetaker@example.com",
     "ENVIRONMENT": "production",
-    "ALLOW_ADMIN_TOKEN_AUTH": "true"
+    "ALLOW_ADMIN_TOKEN_AUTH": "false"
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "minutesbot",
-      "database_id": "ad101cd3-8733-4171-bba4-90928adb1f4f"
+      "database_id": "<D1_DATABASE_ID>"
     }
   ],
   "r2_buckets": [
@@ -56,35 +58,16 @@
       "bucket_name": "minutesbot-artifacts"
     }
   ],
-  "migrations": [
-    {
-      "tag": "remove-meeting-bot-container-from-minutesbot",
-      "deleted_classes": [
-        "MeetingBotContainer"
-      ]
-    }
-  ],
   "queues": {
     "producers": [
       {
-        "binding": "INVITE_QUEUE",
-        "queue": "minutesbot-invites"
-      },
-      {
-        "binding": "SUMMARY_QUEUE",
-        "queue": "minutesbot-summaries"
+        "binding": "JOBS_QUEUE",
+        "queue": "minutesbot-jobs"
       }
     ],
     "consumers": [
       {
-        "queue": "minutesbot-invites",
-        "max_batch_size": 10,
-        "max_batch_timeout": 5,
-        "max_retries": 5,
-        "dead_letter_queue": "minutesbot-dlq"
-      },
-      {
-        "queue": "minutesbot-summaries",
+        "queue": "minutesbot-jobs",
         "max_batch_size": 10,
         "max_batch_timeout": 5,
         "max_retries": 5,
@@ -93,7 +76,10 @@
     ]
   },
   "triggers": {
+    // Per-minute: durable job sweep + stale bot session recovery.
+    // Daily 03:00 UTC: recurrence window expansion + retention cleanup.
     "crons": [
+      "* * * * *",
       "0 3 * * *"
     ]
   },
@@ -101,7 +87,7 @@
     {
       "name": "SEND_EMAIL",
       "allowed_sender_addresses": [
-        "notetaker@minutes.bot"
+        "notetaker@example.com"
       ]
     }
   ]

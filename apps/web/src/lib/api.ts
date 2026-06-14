@@ -36,16 +36,39 @@ export async function apiDelete<T>(path: string): Promise<T> {
   return request<T>(path, { method: "DELETE" });
 }
 
-export async function getSettings(): Promise<AppSettings> {
-  return apiGet<AppSettings>("/api/settings");
+export type SettingsView = {
+  settings: AppSettings;
+  /** Presence flags only — secret values never leave the worker. */
+  secrets: {
+    aiKeyConfigured: boolean;
+    transcriptionKeyConfigured: boolean;
+    botInternalTokenConfigured: boolean;
+    sessionSecretConfigured: boolean;
+  };
+};
+
+export async function getSettings(): Promise<SettingsView> {
+  return apiGet<SettingsView>("/api/settings");
 }
 
-export async function saveSettings(settings: AppSettings): Promise<AppSettings> {
-  return apiPut<AppSettings>("/api/settings", settings);
+export async function saveSettings(settings: AppSettings): Promise<SettingsView> {
+  return apiPut<SettingsView>("/api/settings", settings);
 }
 
-export async function uploadBotImage(input: { contentType: string; data: string; fileName: string }): Promise<AppSettings> {
-  return apiPost<AppSettings>("/api/settings/bot-image", input);
+export async function uploadBotImage(input: { contentType: string; data: string; fileName: string }): Promise<SettingsView> {
+  return apiPost<SettingsView>("/api/settings/bot-image", input);
+}
+
+/** Fetches artifact bytes with the admin bearer header so download links never embed the token. */
+export async function fetchArtifactBlob(artifactId: string): Promise<Blob> {
+  const token = authTokenProvider ? await authTokenProvider() : null;
+  const response = await fetch(`${API_BASE}/api/artifacts/${encodeURIComponent(artifactId)}/content`, {
+    headers: token ? { authorization: `Bearer ${token}` } : {}
+  });
+  if (!response.ok) {
+    throw new ApiError(`Artifact download failed with ${response.status}`, response.status);
+  }
+  return response.blob();
 }
 
 export async function verifyAdminToken(token: string): Promise<{ ok: boolean; status: number }> {

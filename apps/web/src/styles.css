@@ -1081,6 +1081,102 @@ tr:hover td { background: rgba(45, 212, 191, .04); }
 .badge.good { background: rgba(16, 185, 129, .17); color: #6ee7b7; }
 .badge.bad { background: rgba(248, 113, 113, .16); color: #fca5a5; }
 .badge.neutral { background: rgba(148, 163, 184, .16); color: #cbd5e1; }
+.badge.warning { background: rgba(251, 191, 36, .15); color: #fde68a; }
+.badge.active { background: rgba(96, 165, 250, .16); color: #93c5fd; }
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.detailActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.statusCardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.statusCard {
+  display: grid;
+  gap: 10px;
+  background: rgba(15, 23, 42, .86);
+  border: 1px solid #253247;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.statusCard h3 {
+  margin: 0;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.statusCard dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+.statusCard dt { color: #94a3b8; }
+.statusCard dd { margin: 0; overflow-wrap: anywhere; }
+
+.wizardSteps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wizardSteps button {
+  border: 1px solid #253247;
+  background: #0f172a;
+  color: #94a3b8;
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.wizardSteps button.current {
+  background: #182235;
+  color: #f8fafc;
+  border-color: #2dd4bf;
+}
+
+.wizardActions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.connectivityList {
+  display: grid;
+  gap: 10px;
+}
+
+.connectivityRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(15, 23, 42, .86);
+  border: 1px solid #253247;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.connectivityRow .connectivityLabel { min-width: 200px; font-weight: 650; }
+.connectivityRow .connectivityMessage { color: #94a3b8; font-size: 12px; overflow-wrap: anywhere; }
 
 pre {
   margin: 0;

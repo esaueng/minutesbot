@@ -6,6 +6,17 @@ export type IcsDateContext = {
   vtimezoneOffsetMinutes(tzid: string): number | undefined;
 };
 
+export type IcsDateTime = {
+  /** ISO UTC instant. */
+  utc: string;
+  /** "YYYY-MM-DDTHH:MM:SS" as written in the ICS (local). */
+  wallClock?: string;
+  /** Resolved IANA zone when known (Windows display names are mapped). */
+  timeZone?: string;
+  /** True for VALUE=DATE all-day values. */
+  isDate?: boolean;
+};
+
 /**
  * Converts an ICS DTSTART/DTEND value to a UTC ISO string.
  *
@@ -16,6 +27,11 @@ export type IcsDateContext = {
  * otherwise to UTC — never worse than rejecting the invite outright.
  */
 export function parseIcsDate(value: string, params: Map<string, string>, context?: IcsDateContext): string {
+  return parseIcsDateTime(value, params, context).utc;
+}
+
+/** Structured variant of {@link parseIcsDate} that also keeps the wall-clock time and zone. */
+export function parseIcsDateTime(value: string, params: Map<string, string>, context?: IcsDateContext): IcsDateTime {
   const normalized = value.trim();
   const tzid = params.get("TZID");
 
@@ -23,18 +39,32 @@ export function parseIcsDate(value: string, params: Map<string, string>, context
   if (dateOnly || params.get("VALUE")?.toUpperCase() === "DATE") {
     const match = dateOnly ?? normalized.match(/^(\d{4})(\d{2})(\d{2})/);
     if (!match) throw new AppError("INVITE_PARSE_ERROR", `Unsupported calendar date: ${value}`, 400);
-    return zonedTimeToUtcIso(Number(match[1]), Number(match[2]), Number(match[3]), 0, 0, 0, tzid, context);
+    return {
+      utc: zonedTimeToUtcIso(Number(match[1]), Number(match[2]), Number(match[3]), 0, 0, 0, tzid, context),
+      wallClock: `${match[1]}-${match[2]}-${match[3]}T00:00:00`,
+      timeZone: tzid ? resolveIanaTimeZone(tzid) : undefined,
+      isDate: true
+    };
   }
 
   const match = normalized.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);
   if (!match) throw new AppError("INVITE_PARSE_ERROR", `Unsupported calendar date: ${value}`, 400);
   const [, year, month, day, hour, minute, second, zulu] = match;
   const parts = [Number(year), Number(month), Number(day), Number(hour), Number(minute), Number(second)] as const;
+  const wallClock = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
 
   if (zulu === "Z") {
-    return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5])).toISOString();
+    return {
+      utc: new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5])).toISOString(),
+      wallClock,
+      timeZone: "UTC"
+    };
   }
-  return zonedTimeToUtcIso(...parts, tzid, context);
+  return {
+    utc: zonedTimeToUtcIso(...parts, tzid, context),
+    wallClock,
+    timeZone: tzid ? resolveIanaTimeZone(tzid) : undefined
+  };
 }
 
 function zonedTimeToUtcIso(

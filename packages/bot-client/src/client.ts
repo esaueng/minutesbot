@@ -1,5 +1,14 @@
 import { BotClientError, retryableStatus } from "./errors";
-import type { BotClientOptions, BotHealth, BotRecording, BotRun, BotTranscriptSegment, CreateBotInput } from "./types";
+import type {
+  BotClientOptions,
+  BotRuntimeDiagnostics,
+  BotRuntimeHealth,
+  BotRuntimeReadiness,
+  CancelBotResult,
+  CreateBotRuntimeInput,
+  CreateBotRuntimeResult,
+  RuntimeBotStatus
+} from "./types";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
@@ -16,89 +25,39 @@ export class BotClient {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   }
 
-  async createBot(input: CreateBotInput): Promise<BotRun> {
-    // Named fields first with undefined values stripped, then rawOverrides
-    // applied on top — overrides must actually override (the previous spread
-    // order silently discarded any override that had a named counterpart).
-    const payload: Record<string, unknown> = {
-      meeting_url: input.meetingUrl,
-      bot_name: input.botName,
-      bot_image: input.botImage,
-      bot_chat_message: input.botChatMessage ? { to: "everyone", message: input.botChatMessage } : undefined,
-      join_timeout_seconds: input.joinTimeoutSeconds,
-      recording_settings: input.recordingSettings ? { format: input.recordingSettings.format } : undefined,
-      external_media_storage_settings: input.externalMediaStorageSettings
-        ? {
-            bucket_name: input.externalMediaStorageSettings.bucketName,
-            recording_file_name: input.externalMediaStorageSettings.recordingFileName
-          }
-        : undefined,
-      webhooks: input.webhooks,
-      metadata: input.metadata
-    };
-    for (const key of Object.keys(payload)) {
-      if (payload[key] === undefined) delete payload[key];
-    }
-    Object.assign(payload, input.rawOverrides ?? {});
-    return this.request<BotRun>("/api/v1/bots", {
+  async createBot(input: CreateBotRuntimeInput): Promise<CreateBotRuntimeResult> {
+    return this.request<CreateBotRuntimeResult>("/v1/bots", {
       method: "POST",
-      body: JSON.stringify(payload)
+      body: JSON.stringify(input)
     });
   }
 
-  async checkHealth(): Promise<BotHealth> {
-    const health = await this.request<BotHealth>("/_ops/health", {}, mapHealthError);
-    if (!health.ok) throw new BotClientError(healthFailureMessage(health), 503, true, "BOT_UNHEALTHY");
-    return health;
+  async getBot(runtimeBotId: string): Promise<RuntimeBotStatus> {
+    return this.request<RuntimeBotStatus>(`/v1/bots/${encodeURIComponent(runtimeBotId)}`);
   }
 
-  async getBot(botId: string): Promise<BotRun> {
-    return this.request<BotRun>(`/api/v1/bots/${encodeURIComponent(botId)}`);
+  async cancelBot(runtimeBotId: string): Promise<CancelBotResult> {
+    return this.request<CancelBotResult>(`/v1/bots/${encodeURIComponent(runtimeBotId)}/cancel`, { method: "POST" });
   }
 
-  async getBotTranscript(botId: string, options: { force?: boolean } = {}): Promise<BotTranscriptSegment[]> {
-    const params = new URLSearchParams();
-    if (options.force) params.set("force", "true");
-    const serializedParams = params.toString();
-    const query = serializedParams ? `?${serializedParams}` : "";
-    return this.request<BotTranscriptSegment[]>(`/api/v1/bots/${encodeURIComponent(botId)}/transcript${query}`);
+  async getDiagnostics(runtimeBotId: string): Promise<BotRuntimeDiagnostics> {
+    return this.request<BotRuntimeDiagnostics>(`/v1/bots/${encodeURIComponent(runtimeBotId)}/diagnostics`);
   }
 
-  async getBotRecording(botId: string): Promise<BotRecording> {
-    const response = await this.rawRequest(`/api/v1/bots/${encodeURIComponent(botId)}/recording`);
-    const contentType = response.headers.get("content-type") ?? "application/octet-stream";
-    if (!isRecordingContentType(contentType)) {
-      throw new BotClientError(`Meeting bot recording media is unavailable; received ${contentType}`, response.status, true, "BOT_RECORDING_UNAVAILABLE");
-    }
-    return {
-      data: await response.arrayBuffer(),
-      contentType,
-      sizeBytes: numberHeader(response.headers.get("content-length"))
-    };
+  /**
+   * Returns the runtime health report. A 503 still carries the per-check
+   * body, so callers can see exactly which dependency is missing instead of
+   * getting an opaque error.
+   */
+  async checkHealth(): Promise<BotRuntimeHealth> {
+    return this.request<BotRuntimeHealth>("/_ops/health", {}, { allowStatuses: [503] });
   }
 
-  async deleteBotData(botId: string): Promise<void> {
-    await this.request<unknown>(`/api/v1/bots/${encodeURIComponent(botId)}/delete_data`, { method: "POST" });
+  async checkReady(): Promise<BotRuntimeReadiness> {
+    return this.request<BotRuntimeReadiness>("/_ops/ready", {}, { allowStatuses: [503] });
   }
 
-  async cancelBot(botId: string): Promise<BotRun> {
-    return this.request<BotRun>(`/api/v1/bots/${encodeURIComponent(botId)}/cancel`, { method: "POST" });
-  }
-
-  private async request<T>(path: string, init: RequestInit = {}, errorMapper = mapStatus): Promise<T> {
-    const response = await this.rawRequest(path, init, errorMapper);
-
-    if (response.status === 204) return undefined as T;
-    try {
-      return (await response.json()) as T;
-    } catch {
-      // A non-JSON 2xx body must surface as a typed client error so callers
-      // branching on code/retryable keep working.
-      throw new BotClientError("Meeting bot response was not valid JSON", response.status, true, "BOT_INVALID_RESPONSE");
-    }
-  }
-
-  private async rawRequest(path: string, init: RequestInit = {}, errorMapper = mapStatus): Promise<Response> {
+  private async request<T>(path: string, init: RequestInit = {}, options: { allowStatuses?: number[] } = {}): Promise<T> {
     const headers: Record<string, string> = {
       "content-type": "application/json",
       ...(this.internalToken ? { authorization: `Bearer ${this.internalToken}` } : {}),
@@ -117,55 +76,49 @@ export class BotClient {
       if (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")) {
         throw new BotClientError(`Meeting bot request timed out after ${this.timeoutMs}ms`, 408, true, "BOT_REQUEST_TIMEOUT");
       }
-      throw error;
+      throw new BotClientError(
+        `Meeting bot request failed: ${error instanceof Error ? error.message : String(error)}`,
+        0,
+        true,
+        "BOT_NETWORK_ERROR"
+      );
     }
 
-    if (!response.ok) {
-      const retryable = retryableStatus(response.status);
-      let message = `Meeting bot request failed with ${response.status}`;
-      if (path === "/_ops/health") message = healthFailureMessage(await readHealthResponse(response));
-      throw new BotClientError(message, response.status, retryable, errorMapper(response.status));
+    if (!response.ok && !options.allowStatuses?.includes(response.status)) {
+      const detail = await readDetail(response);
+      throw new BotClientError(
+        `Meeting bot request failed with ${response.status}${detail ? `: ${detail}` : ""}`,
+        response.status,
+        retryableStatus(response.status),
+        mapStatus(response.status)
+      );
     }
 
-    return response;
+    try {
+      return (await response.json()) as T;
+    } catch {
+      // A non-JSON body must surface as a typed client error so callers
+      // branching on code/retryable keep working.
+      throw new BotClientError("Meeting bot response was not valid JSON", response.status, true, "BOT_INVALID_RESPONSE");
+    }
   }
-}
-
-export { BotClient as AttendeeClient };
-
-function numberHeader(value: string | null): number | undefined {
-  if (!value) return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function isRecordingContentType(contentType: string): boolean {
-  const type = contentType.split(";")[0]?.trim().toLowerCase();
-  return Boolean(type && (type.startsWith("audio/") || type.startsWith("video/") || type === "application/octet-stream"));
 }
 
 export function normalizeBaseUrl(baseUrl: string): string {
   return new URL(baseUrl).toString().replace(/\/+$/, "");
 }
 
+async function readDetail(response: Response): Promise<string | null> {
+  const body = (await response.clone().json().catch(() => null)) as { detail?: unknown } | null;
+  return body && typeof body.detail === "string" ? body.detail : null;
+}
+
 function mapStatus(status: number): string {
   if (status === 401 || status === 403) return "BOT_AUTH_FAILED";
   if (status === 404) return "BOT_NOT_FOUND";
   if (status === 409) return "BOT_CONFLICT";
+  if (status === 422) return "BOT_INVALID_MEETING_URL";
   if (status === 429) return "BOT_RATE_LIMITED";
   if (status >= 500) return "BOT_UPSTREAM_ERROR";
   return "BOT_REQUEST_FAILED";
-}
-
-function mapHealthError(_status: number): string {
-  return "BOT_UNHEALTHY";
-}
-
-async function readHealthResponse(response: Response): Promise<Partial<BotHealth>> {
-  return ((await response.clone().json().catch(() => ({}))) ?? {}) as Partial<BotHealth>;
-}
-
-function healthFailureMessage(health: Partial<BotHealth>): string {
-  const missing = Array.isArray(health.missing) && health.missing.length > 0 ? `: missing ${health.missing.join(", ")}` : "";
-  return `Meeting bot health check failed${missing}`;
 }

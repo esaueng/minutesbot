@@ -2,27 +2,7 @@ import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-const REQUIRED_RESOURCES = {
-  development: {
-    d1: { binding: "DB", databaseName: "minutesbot" },
-    r2Buckets: ["minutesbot-artifacts"],
-    queues: ["minutesbot-invites", "minutesbot-summaries", "minutesbot-dlq"]
-  },
-  production: {
-    d1: { binding: "DB", databaseName: "minutesbot" },
-    r2Buckets: ["minutesbot-artifacts"],
-    queues: ["minutesbot-invites", "minutesbot-summaries", "minutesbot-dlq"]
-  },
-  staging: {
-    d1: { binding: "DB", databaseName: "minutesbot-staging" },
-    r2Buckets: ["minutesbot-staging-artifacts"],
-    queues: ["minutesbot-staging-invites", "minutesbot-staging-summaries", "minutesbot-staging-dlq"]
-  }
-} as const;
-
-export type CloudflareEnvironment = keyof typeof REQUIRED_RESOURCES;
-
-export type RunCommand = (command: string, args: string[]) => Promise<string | void>;
+export type CloudflareEnvironment = "development" | "production" | "staging";
 
 export type RequiredCloudflareResources = {
   d1: { binding: string; databaseName: string };
@@ -30,26 +10,39 @@ export type RequiredCloudflareResources = {
   queues: string[];
 };
 
+// Source of truth for the Cloudflare resources each environment needs. The
+// names must match the bindings in the root wrangler.jsonc (queue
+// producer/consumer JOBS_QUEUE, R2 binding ARTIFACTS, D1 binding DB).
+const REQUIRED_RESOURCES: Record<CloudflareEnvironment, RequiredCloudflareResources> = {
+  development: {
+    d1: { binding: "DB", databaseName: "minutesbot" },
+    r2Buckets: ["minutesbot-artifacts"],
+    queues: ["minutesbot-jobs", "minutesbot-dlq"]
+  },
+  production: {
+    d1: { binding: "DB", databaseName: "minutesbot" },
+    r2Buckets: ["minutesbot-artifacts"],
+    queues: ["minutesbot-jobs", "minutesbot-dlq"]
+  },
+  staging: {
+    d1: { binding: "DB", databaseName: "minutesbot-staging" },
+    r2Buckets: ["minutesbot-staging-artifacts"],
+    queues: ["minutesbot-staging-jobs", "minutesbot-staging-dlq"]
+  }
+};
+
+export type RunCommand = (command: string, args: string[], options?: { input?: string }) => Promise<string | void>;
+
 export type EnsureCloudflareResourcesOptions = {
   environment?: CloudflareEnvironment;
   configPath?: string;
+  dryRun?: boolean;
   runCommand?: RunCommand;
   readConfig?: (path: string) => Promise<string>;
   writeConfig?: (path: string, contents: string) => Promise<void>;
   resources?: RequiredCloudflareResources;
   log?: (message: string) => void;
   error?: (message: string) => void;
-};
-
-type D1Binding = {
-  binding: string;
-  database_name: string;
-  database_id: string;
-};
-
-type WranglerConfig = {
-  d1_databases?: D1Binding[];
-  env?: Record<string, { d1_databases?: D1Binding[] }>;
 };
 
 class CommandError extends Error {
@@ -61,7 +54,7 @@ class CommandError extends Error {
   }
 }
 
-function isMissingQueueError(error: unknown): boolean {
+function isMissingResourceError(error: unknown): boolean {
   const message = error instanceof CommandError ? `${error.message}\n${error.output}` : error instanceof Error ? error.message : String(error);
   // Best effort: "not found"-style text also shows up in auth and network failures, so only
   // treat the resource as missing when the output does not look like an auth/network error.
@@ -129,16 +122,20 @@ export function stripJsonComments(text: string): string {
   return result;
 }
 
-export async function runWrangler(command: string, args: string[]): Promise<string> {
+export async function runWrangler(command: string, args: string[], options: { input?: string } = {}): Promise<string> {
   return await new Promise<string>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, { stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
 
-    child.stdout.on("data", (chunk) => {
+    if (options.input !== undefined && child.stdin) {
+      child.stdin.write(options.input);
+      child.stdin.end();
+    }
+    child.stdout?.on("data", (chunk) => {
       stdout += chunk.toString();
     });
-    child.stderr.on("data", (chunk) => {
+    child.stderr?.on("data", (chunk) => {
       stderr += chunk.toString();
     });
     child.on("error", reject);
@@ -152,6 +149,12 @@ export async function runWrangler(command: string, args: string[]): Promise<stri
   });
 }
 
+/**
+ * Creates-or-verifies the D1 database, R2 bucket, and queues, patches the
+ * D1 database id into wrangler.jsonc (replacing the <D1_DATABASE_ID>
+ * placeholder without destroying comments), applies remote migrations, and
+ * reports the Email Routing / send_email steps that cannot be automated.
+ */
 export async function ensureCloudflareResources(options: EnsureCloudflareResourcesOptions = {}): Promise<void> {
   const runCommand = options.runCommand ?? runWrangler;
   const configPath = options.configPath ?? "wrangler.jsonc";
@@ -162,8 +165,12 @@ export async function ensureCloudflareResources(options: EnsureCloudflareResourc
   const environment = options.environment ?? "production";
   const resources = options.resources ?? REQUIRED_RESOURCES[environment];
 
+  if (options.dryRun) {
+    printEnsurePlan({ environment, configPath, resources, configText: await readConfig(configPath), log });
+    return;
+  }
+
   await ensureD1Database({
-    binding: resources.d1.binding,
     databaseName: resources.d1.databaseName,
     environment,
     configPath,
@@ -184,7 +191,7 @@ export async function ensureCloudflareResources(options: EnsureCloudflareResourc
       log(`Cloudflare Queue ${queueName} already exists.`);
       continue;
     } catch (infoError) {
-      if (!isMissingQueueError(infoError)) {
+      if (!isMissingResourceError(infoError)) {
         error(`Failed to inspect Cloudflare Queue ${queueName}: ${errorMessage(infoError)}`);
         throw infoError;
       }
@@ -199,10 +206,47 @@ export async function ensureCloudflareResources(options: EnsureCloudflareResourc
       throw createError;
     }
   }
+
+  reportManualEmailSteps(await readConfig(configPath), log);
+}
+
+function printEnsurePlan(options: {
+  environment: CloudflareEnvironment;
+  configPath: string;
+  resources: RequiredCloudflareResources;
+  configText: string;
+  log: (message: string) => void;
+}): void {
+  const { log } = options;
+  log(`Dry run: Cloudflare resource plan for ${options.environment} (no changes will be made):`);
+  log(`- Create-or-verify D1 database ${options.resources.d1.databaseName} and patch its database_id into ${options.configPath}.`);
+  log(`- Apply D1 migrations to ${options.resources.d1.databaseName} (--remote).`);
+  for (const bucket of options.resources.r2Buckets) log(`- Create-or-verify R2 bucket ${bucket}.`);
+  for (const queue of options.resources.queues) log(`- Create-or-verify queue ${queue}.`);
+  reportManualEmailSteps(options.configText, log);
+}
+
+/**
+ * Email Routing and Email Workers sender verification have no wrangler
+ * commands; the operator has to do these once in the Cloudflare dashboard.
+ */
+function reportManualEmailSteps(configText: string, log: (message: string) => void): void {
+  const config = JSON.parse(stripJsonComments(configText)) as {
+    vars?: Record<string, string>;
+    send_email?: Array<{ name?: string; allowed_sender_addresses?: string[] }>;
+  };
+  const recorder = config.vars?.DEFAULT_RECORDER_EMAIL ?? "<recorder email>";
+  const senders = config.send_email?.flatMap((binding) => binding.allowed_sender_addresses ?? []) ?? [];
+  if (!config.send_email || config.send_email.length === 0) {
+    log("WARNING: wrangler.jsonc has no send_email binding; recap delivery will fail until one is configured.");
+  }
+  log("Manual steps (cannot be automated with wrangler):");
+  log(`- Email Routing: enable it on the recorder domain and route ${recorder} to the minutesbot Worker (Email Workers rule).`);
+  log(`- Email sending: the send_email sender address(es) ${senders.join(", ") || "<none configured>"} must belong to a zone on this account with Email Routing enabled.`);
+  log("- Custom domains: the route patterns in wrangler.jsonc must be hostnames in a Cloudflare zone on this account.");
 }
 
 async function ensureD1Database(options: {
-  binding: string;
   databaseName: string;
   environment: CloudflareEnvironment;
   configPath: string;
@@ -225,18 +269,40 @@ async function ensureD1Database(options: {
   }
 
   const currentConfig = await options.readConfig(options.configPath);
-  const updatedConfig = updateD1DatabaseIdInConfig({
-    configText: currentConfig,
-    environment: options.environment,
-    binding: options.binding,
-    databaseName: options.databaseName,
-    databaseId
-  });
-  if (updatedConfig !== currentConfig) await options.writeConfig(options.configPath, updatedConfig);
+  const updatedConfig = patchD1DatabaseId(currentConfig, options.databaseName, databaseId);
+  if (updatedConfig !== currentConfig) {
+    await options.writeConfig(options.configPath, updatedConfig);
+    options.log(`Patched database_id for ${options.databaseName} into ${options.configPath}.`);
+  }
 
   const migrationArgs = ["d1", "migrations", "apply", options.databaseName, "--remote"];
   if (options.environment === "staging") migrationArgs.push("--env", "staging");
   await options.runCommand("wrangler", withConfig(migrationArgs, options.configPath));
+}
+
+/**
+ * Replaces the database_id paired with the given database_name via targeted
+ * text substitution, so comments in wrangler.jsonc survive (a JSON.parse /
+ * JSON.stringify round trip would drop them). Handles the <D1_DATABASE_ID>
+ * placeholder and stale real ids alike.
+ */
+export function patchD1DatabaseId(configText: string, databaseName: string, databaseId: string): string {
+  const name = escapeRegExp(databaseName);
+  // database_name before database_id within the same object, or the reverse.
+  const patterns = [
+    `("database_name"\\s*:\\s*"${name}"[^{}]*?"database_id"\\s*:\\s*")[^"]*(")`,
+    `("database_id"\\s*:\\s*")[^"]*("[^{}]*?"database_name"\\s*:\\s*"${name}")`
+  ];
+  for (const pattern of patterns) {
+    if (new RegExp(pattern).test(configText)) {
+      return configText.replace(new RegExp(pattern, "g"), `$1${databaseId}$2`);
+    }
+  }
+  throw new Error(`Could not find a d1_databases entry for ${databaseName} in wrangler config to patch its database_id.`);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function ensureR2Bucket(options: {
@@ -251,7 +317,7 @@ async function ensureR2Bucket(options: {
     options.log(`Cloudflare R2 bucket ${options.bucketName} already exists.`);
     return;
   } catch (infoError) {
-    if (!isMissingQueueError(infoError)) {
+    if (!isMissingResourceError(infoError)) {
       options.error(`Failed to inspect Cloudflare R2 bucket ${options.bucketName}: ${errorMessage(infoError)}`);
       throw infoError;
     }
@@ -288,47 +354,6 @@ function parseD1ListOutput(output: string): Array<{ name?: string; uuid?: string
   return [];
 }
 
-function updateD1DatabaseIdInConfig(options: {
-  configText: string;
-  environment: CloudflareEnvironment;
-  binding: string;
-  databaseName: string;
-  databaseId: string;
-}): string {
-  // Parse as JSONC; note that rewriting via JSON.stringify drops any comments
-  // (acceptable: the config currently has none).
-  const config = JSON.parse(stripJsonComments(options.configText)) as WranglerConfig;
-  if (options.environment === "production" || options.environment === "development") {
-    config.d1_databases = updateD1Bindings(config.d1_databases, options.binding, options.databaseName, options.databaseId);
-  }
-  if (config.env?.[options.environment]) {
-    config.env[options.environment].d1_databases = updateD1Bindings(
-      config.env[options.environment].d1_databases,
-      options.binding,
-      options.databaseName,
-      options.databaseId
-    );
-  }
-  return `${JSON.stringify(config, null, 2)}\n`;
-}
-
-function updateD1Bindings(
-  bindings: D1Binding[] | undefined,
-  bindingName: string,
-  databaseName: string,
-  databaseId: string
-): D1Binding[] {
-  const nextBindings = bindings ? [...bindings] : [];
-  const bindingIndex = nextBindings.findIndex((binding) => binding.binding === bindingName || binding.database_name === databaseName);
-  const nextBinding = { binding: bindingName, database_name: databaseName, database_id: databaseId };
-  if (bindingIndex >= 0) {
-    nextBindings[bindingIndex] = { ...nextBindings[bindingIndex], ...nextBinding };
-  } else {
-    nextBindings.push(nextBinding);
-  }
-  return nextBindings;
-}
-
 function isObject(value: unknown): value is { result?: unknown } {
   return typeof value === "object" && value !== null;
 }
@@ -336,7 +361,10 @@ function isObject(value: unknown): value is { result?: unknown } {
 const isCli = process.argv[1] === fileURLToPath(import.meta.url);
 
 if (isCli) {
-  ensureCloudflareResources({ environment: parseEnvironment(process.argv) }).catch((error: unknown) => {
+  ensureCloudflareResources({
+    environment: parseEnvironment(process.argv),
+    dryRun: process.argv.includes("--dry-run")
+  }).catch((error: unknown) => {
     console.error(errorMessage(error));
     process.exitCode = 1;
   });

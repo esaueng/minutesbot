@@ -1,71 +1,47 @@
 # Access Control
 
-minutesbot uses layered protection on Cloudflare:
+Two admin auth modes, decided by wrangler vars (`apps/api-worker/src/middleware/auth.ts`):
 
-1. Cloudflare Access can protect the Worker route before traffic reaches the app.
-2. The Worker validates Cloudflare Access JWTs when Access vars are configured.
-3. A self-hosted admin token remains as the explicit fallback for deployments where Cloudflare Access is enforced in front of the Worker.
-4. WAF rules block unwanted traffic before it reaches the Worker.
+## 1. Cloudflare Access (production default)
 
-## Admin Token Setup
+Put Cloudflare Access in front of the admin UI/API and let the Worker validate the Access JWT:
 
-Set a strong `SESSION_SECRET` Cloudflare Worker secret:
+1. Create an Access application for the app domain (and API domain if separate).
+2. Set the vars on the main worker: `CLOUDFLARE_ACCESS_AUD`, `CLOUDFLARE_ACCESS_JWKS_URL` (`https://<team>.cloudflareaccess.com/cdn-cgi/access/certs`), and `CLOUDFLARE_ACCESS_ISSUER`.
+3. Keep `ALLOW_ADMIN_TOKEN_AUTH=false` (the checked-in default).
+
+When the Access vars are configured, the Worker validates the `Cf-Access-Jwt-Assertion` header on every protected route (API and SPA assets) — a valid Access identity is sufficient and the static token path is skipped.
+
+**Fail-closed rule:** any named environment (`ENVIRONMENT` set to anything other than `development`, `test`, or `local` — including typos like `prod`) without Access vars returns `503 CLOUDFLARE_ACCESS_REQUIRED` rather than silently downgrading to token auth.
+
+## 2. Admin-token mode (development / explicit opt-in)
+
+Set `ALLOW_ADMIN_TOKEN_AUTH=true` and a strong secret:
 
 ```bash
 wrangler secret put SESSION_SECRET
 ```
 
-The admin console stores the entered token in browser local storage and sends it as a bearer token to protected API routes. Rotate `SESSION_SECRET` if the token is exposed. When Cloudflare Access validation is configured, a valid Access JWT is sufficient for protected admin UI/API routes and the admin token fallback is skipped.
+The admin console stores the entered token in browser local storage and sends it as a bearer token; the Worker compares it to `SESSION_SECRET` in constant time. Rotate the secret if the token is ever exposed. `pnpm check` can use the same token (`MINUTESBOT_ADMIN_TOKEN`) for the authed R2 round-trip check.
 
-The API protects every `/api/*` route except:
+## Public routes
 
-- `/api/health`
-- `/api/webhooks/bot` (and the legacy alias `/api/webhooks/attendee`) — protected by the managed internal bot token generated during one-shot deployment; webhooks additionally require an `idempotency_key` and must match the meeting's recorded bot id
-- `/api/artifacts/:meetingId/transcript.txt` — protected by a short-lived HMAC-signed download token embedded in recap emails
+Every `/api/*` route requires auth except:
 
-Any other named environment (`ENVIRONMENT` set to anything other than `development`, `test`, or `local`) requires Cloudflare Access unless `ALLOW_ADMIN_TOKEN_AUTH=true` is set explicitly; a misspelled environment name fails closed instead of silently downgrading to token auth.
+- `/api/health`, `/api/ready` — unauthenticated health probes.
+- `/api/webhooks/bot` — protected instead by the managed `BOT_INTERNAL_TOKEN` bearer (provisioned by `pnpm bot:deploy`); payloads are schema-validated, require an idempotency key, and may only mutate the session they name.
+- Transcript download links in recap emails — protected by short-lived HMAC-signed download tokens.
 
-## Cloudflare Access JWT Validation
+Requests to API routes on hostnames other than the configured app domain are 404'd, and SPA assets are gated behind Access when configured.
 
-The Worker can validate the `Cf-Access-Jwt-Assertion` header when deployment-specific Access JWT vars are configured. The checked-in connected-build production config does not set those vars because Access is handled outside the Worker by default; it sets `ALLOW_ADMIN_TOKEN_AUTH=true` so protected API routes continue to require the admin token instead of returning `CLOUDFLARE_ACCESS_REQUIRED`.
+## WAF hardening (optional)
 
-## Cloudflare Access and WAF
+Add WAF custom rules for common scanner paths (`/.env`, `/.git`, `/wp-admin`, `/wp-login.php`, `/phpmyadmin`, `/xmlrpc.php`) and any IP blocks your org uses. WAF is defense-in-depth, not the access-control layer.
 
-Protect the admin UI with Cloudflare Access and add WAF custom rules for common scanner paths:
-
-- `/.env`
-- `/.git`
-- `/wp-admin`
-- `/wp-login.php`
-- `/phpmyadmin`
-- `/xmlrpc.php`
-
-In the Cloudflare dashboard, add project-level IP blocks or custom WAF rules for known unwanted sources. Do not use WAF as the only admin protection; the admin token is the access-control layer.
-
-Add a narrow skip rule before any challenge/block rules so meeting bot webhook delivery reaches the Worker:
+If you enable challenges/managed rules on the bot webhook hostname, add a narrow skip rule so webhook delivery reaches the Worker instead of an HTML challenge page:
 
 ```text
-http.host eq "meeting.minutes.bot" and http.request.uri.path eq "/api/webhooks/bot" and http.request.method eq "POST"
+http.host eq "meeting.yourcompany.com" and http.request.uri.path eq "/api/webhooks/bot" and http.request.method eq "POST"
 ```
 
-The rule should use Cloudflare's `skip` action for browser/security challenges only on that exact POST endpoint. In ruleset JSON, minutesbot applies:
-
-```json
-{
-  "ref": "minutesbot_bot_webhook_security_exception",
-  "action": "skip",
-  "action_parameters": {
-    "ruleset": "current",
-    "phases": ["http_request_firewall_managed", "http_request_sbfm"],
-    "products": ["bic", "securityLevel", "uaBlock", "waf"]
-  }
-}
-```
-
-This does not make the webhook unauthenticated. `/api/webhooks/bot` still verifies managed bearer authorization, and unauthorized POSTs should return `401 INVALID_BOT_WEBHOOK_AUTH` from the Worker instead of a Cloudflare HTML challenge page.
-
-To apply the exception with a Cloudflare API token that can edit zone rulesets:
-
-```bash
-CLOUDFLARE_API_TOKEN=... pnpm cloudflare:ensure-webhook-bypass
-```
+Use the `skip` action for browser/security challenges on that exact POST endpoint only. This does not make the webhook unauthenticated — unauthorized POSTs still get a `401` from the Worker.

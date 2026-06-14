@@ -1,65 +1,38 @@
 import { useEffect, useState } from "react";
-import { MeetingTable } from "../components/MeetingTable";
-import { apiDelete, apiGet } from "../lib/api";
-
-type Meeting = Record<string, string | number | null | undefined>;
-
-type RemoveMeetingFromHistoryInput = {
-  meeting: Meeting;
-  deleteMeeting: (id: string) => Promise<unknown>;
-  setMeetings: (updater: (current: Meeting[]) => Meeting[]) => void;
-  setDeletingId: (id: string | null) => void;
-  setError: (message: string) => void;
-};
+import { apiGet } from "../lib/api";
+import type { CalendarEventRow, OccurrenceRow } from "../lib/types";
+import { EventTable, groupOccurrencesByEvent, summarizeEventOccurrences, type EventOccurrenceSummary } from "../components/EventTable";
 
 export function Meetings() {
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [events, setEvents] = useState<CalendarEventRow[]>([]);
+  const [summaries, setSummaries] = useState<Record<string, EventOccurrenceSummary>>({});
   const [error, setError] = useState("");
-  const loadMeetings = () =>
-    apiGet<{ meetings: Meeting[] }>("/api/meetings")
-      .then((data) => setMeetings(data.meetings))
-      .catch((err) => setError(err.message));
-  useEffect(() => {
-    void loadMeetings();
-  }, []);
+  const [loading, setLoading] = useState(true);
 
-  async function removeMeeting(meeting: Meeting) {
-    await removeMeetingFromHistory({
-      meeting,
-      deleteMeeting: (id) => apiDelete(`/api/meetings/${encodeURIComponent(id)}`),
-      setMeetings,
-      setDeletingId,
-      setError
-    });
-  }
+  useEffect(() => {
+    Promise.all([
+      apiGet<{ events: CalendarEventRow[] }>("/api/events"),
+      apiGet<{ occurrences: OccurrenceRow[] }>("/api/occurrences?limit=500")
+    ])
+      .then(([eventData, occurrenceData]) => {
+        setEvents(eventData.events);
+        const byEvent = groupOccurrencesByEvent(occurrenceData.occurrences);
+        const next: Record<string, EventOccurrenceSummary> = {};
+        for (const [eventId, occurrences] of byEvent) next[eventId] = summarizeEventOccurrences(occurrences);
+        setSummaries(next);
+      })
+      .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Failed to load meetings."))
+      .finally(() => setLoading(false));
+  }, []);
 
   return (
     <div className="page">
-      <header><h1>Meetings</h1><p>All meeting records created from Teams calendar invites and forwarded Teams links.</p></header>
+      <header>
+        <h1>Meetings</h1>
+        <p>Calendar event series created from Teams invites. Each series expands into per-occurrence pipelines.</p>
+      </header>
       {error && <p className="errorText">{error}</p>}
-      <MeetingTable meetings={meetings} onRemoveMeeting={removeMeeting} deletingMeetingId={deletingId} />
+      {loading ? <p className="mutedText">Loading meetings...</p> : <EventTable events={events} summaries={summaries} />}
     </div>
   );
-}
-
-export async function removeMeetingFromHistory({
-  meeting,
-  deleteMeeting,
-  setMeetings,
-  setDeletingId,
-  setError
-}: RemoveMeetingFromHistoryInput): Promise<void> {
-  const id = String(meeting.id ?? "");
-  if (!id) return;
-  setDeletingId(id);
-  setError("");
-  try {
-    await deleteMeeting(id);
-    setMeetings((current) => current.filter((item) => String(item.id) !== id));
-  } catch (err) {
-    setError(err instanceof Error ? err.message : "Failed to remove meeting");
-  } finally {
-    setDeletingId(null);
-  }
 }

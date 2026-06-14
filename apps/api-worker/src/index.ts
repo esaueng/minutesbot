@@ -1,18 +1,21 @@
 import { Hono } from "hono";
 import { toErrorResponse } from "@minutesbot/shared";
 import type { Env } from "./env";
-import { auditLogsRoute } from "./routes/auditLogs";
 import { artifactsRoute } from "./routes/artifacts";
+import { auditLogsRoute } from "./routes/auditLogs";
 import { botWebhookRoute } from "./routes/botWebhook";
-import { healthRoute } from "./routes/health";
-import { meetingsRoute } from "./routes/meetings";
+import { eventsRoute } from "./routes/events";
+import { healthRoute, readyRoute } from "./routes/health";
+import { jobsRoute } from "./routes/jobs";
+import { occurrencesRoute } from "./routes/occurrences";
 import { settingsRoute } from "./routes/settings";
 import { testActionsRoute } from "./routes/testActions";
 import { corsMiddleware } from "./middleware/cors";
 import { errorMiddleware } from "./middleware/errors";
 import { adminTokenAuthMiddleware, isPublicApiPath } from "./middleware/auth";
 import { isCloudflareAccessConfigured, requireCloudflareAccess } from "./middleware/cloudflareAccess";
-import { cleanupOldArtifacts, handleQueueBatch } from "../../workflow-worker/src/queueConsumers";
+import { handleQueueBatch } from "../../workflow-worker/src/queueConsumers";
+import { handleScheduled } from "../../workflow-worker/src/cron";
 import emailWorker from "../../email-worker/src/index";
 
 export const app = new Hono<{ Bindings: Env }>();
@@ -28,15 +31,16 @@ app.use("*", corsMiddleware);
 app.use("/api/*", adminTokenAuthMiddleware);
 
 app.route("/api/health", healthRoute);
+app.route("/api/ready", readyRoute);
 app.route("/api/settings", settingsRoute);
 app.route("/api/admin", testActionsRoute);
 app.route("/api/admin/audit-logs", auditLogsRoute);
-app.route("/api/meetings", meetingsRoute);
+app.route("/api/events", eventsRoute);
+app.route("/api/occurrences", occurrencesRoute);
+app.route("/api/jobs", jobsRoute);
 app.route("/api/artifacts", artifactsRoute);
 app.route("/api/webhooks/bot", botWebhookRoute);
 app.route("/api/webhooks/bot/", botWebhookRoute);
-app.route("/api/webhooks/attendee", botWebhookRoute);
-app.route("/api/webhooks/attendee/", botWebhookRoute);
 
 export default {
   async fetch(request, env, ctx) {
@@ -46,8 +50,8 @@ export default {
   async queue(batch, env) {
     await handleQueueBatch(batch, env);
   },
-  async scheduled(_event, env, ctx) {
-    ctx.waitUntil(cleanupOldArtifacts(env));
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(handleScheduled(env, event.cron));
   }
 } satisfies ExportedHandler<Env>;
 
